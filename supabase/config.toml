@@ -1,1 +1,4 @@
 project_id = "ehswpksboxyzqztdhofh"
+
+[functions.rag-agent]
+verify_jwt = false
