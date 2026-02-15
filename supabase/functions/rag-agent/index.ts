@@ -77,6 +77,13 @@ async function chatOllama(messages: any[], apiKey: string): Promise<Response | n
     });
     if (!resp.ok) { console.error("Ollama error:", resp.status); return null; }
     
+    // Validate response is actually JSON/NDJSON, not an HTML page
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("json") && !contentType.includes("octet-stream") && !contentType.includes("text/event-stream")) {
+      console.error("Ollama returned unexpected content-type:", contentType);
+      return null;
+    }
+    
     // Transform Ollama's NDJSON stream into OpenAI-compatible SSE format
     const reader = resp.body!.getReader();
     const decoder = new TextDecoder();
