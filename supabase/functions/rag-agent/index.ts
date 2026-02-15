@@ -76,7 +76,60 @@ async function chatOllama(messages: any[], apiKey: string): Promise<Response | n
       body: JSON.stringify({ model: "gpt-oss:120b", messages, stream: true }),
     });
     if (!resp.ok) { console.error("Ollama error:", resp.status); return null; }
-    return resp;
+    
+    // Transform Ollama's NDJSON stream into OpenAI-compatible SSE format
+    const reader = resp.body!.getReader();
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    let buffer = "";
+    
+    const stream = new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            // Process remaining buffer
+            if (buffer.trim()) {
+              try {
+                const parsed = JSON.parse(buffer.trim());
+                const content = parsed.message?.content || "";
+                if (content) {
+                  const sseData = JSON.stringify({ choices: [{ delta: { content } }] });
+                  controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+                }
+              } catch { /* ignore */ }
+            }
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+            return;
+          }
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              // Skip thinking content, only emit actual content
+              const content = parsed.message?.content || "";
+              if (content) {
+                const sseData = JSON.stringify({ choices: [{ delta: { content } }] });
+                controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+              }
+            } catch { /* skip unparseable lines */ }
+          }
+        } catch (e) {
+          console.error("Ollama stream error:", e);
+          controller.error(e);
+        }
+      }
+    });
+    
+    return new Response(stream, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
   } catch (e) { console.error("Ollama exception:", e); return null; }
 }
 
