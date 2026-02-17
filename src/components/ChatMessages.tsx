@@ -14,7 +14,7 @@ interface ChatMessagesProps {
 }
 
 export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesProps) {
-  if (messages.length === 0) {
+  if (messages.length === 0 && !isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
         <div className="rounded-full bg-muted p-4 mb-4">
@@ -40,24 +40,31 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
               <Bot size={16} className="text-accent" />
             </div>
           )}
+
           <div
             className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
               msg.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"
             }`}
           >
             {msg.role === "assistant" ? (
-            <div className="prose prose-sm max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex, rehypeHighlight]}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              </div>
+              msg.content === "" ? (
+                // Empty assistant bubble while first tokens arrive — show cursor
+                <span className="inline-block w-2 h-4 bg-current opacity-70 animate-pulse" />
+              ) : (
+                <div className="prose prose-sm max-w-none">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
+              )
             ) : (
-              msg.content
+              <span className="whitespace-pre-wrap">{msg.content}</span>
             )}
           </div>
+
           {msg.role === "user" && (
             <div className="mt-1 flex-shrink-0 rounded-full bg-primary/20 p-1.5">
               <User size={16} className="text-primary" />
@@ -66,12 +73,13 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
         </div>
       ))}
 
-      {isLoading && messages[messages.length - 1]?.role === "user" && (
+      {/* Typing dots — only while loading AND no assistant bubble yet */}
+      {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user") && (
         <div className="flex gap-3 justify-start animate-fade-in">
           <div className="mt-1 flex-shrink-0 rounded-full bg-accent/20 p-1.5">
             <Bot size={16} className="text-accent" />
           </div>
-          <div className="chat-bubble-assistant rounded-2xl px-4 py-3 flex gap-1">
+          <div className="chat-bubble-assistant rounded-2xl px-4 py-3 flex gap-1 items-center">
             <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-dot" />
             <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
             <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
