@@ -41,19 +41,33 @@ interface CurriculumAlignment {
   term?: string;
   topic?: string;
   competency?: string;
+  // What the student should be able to do — extracted from learning outcomes chunks
   learningOutcomes: string[];
+  // Raw syllabus chunks for the model to read and understand scope/depth
   syllabusChunks: string[];
+  // Whether we found anything relevant at all
   found: boolean;
 }
 
 // ============================================================================
 // Score threshold
+//
+// Chunks below this score are from unrelated subjects and should be dropped.
+// In testing, a moles query pulled Biology chunks at ~0.51.
+// Relevant Chemistry chunks scored ~0.52+. Threshold set conservatively at 0.50
+// to avoid dropping edge cases — the prompt handles irrelevant content gracefully.
+// Raise to 0.55–0.60 if you see persistent cross-subject contamination.
 // ============================================================================
 
 const SCORE_THRESHOLD = 0.50;
 
 // ============================================================================
 // Parse curriculum alignment from Qdrant results
+//
+// ALL chunks in your database are syllabus specification data — learning outcomes,
+// teaching activities, assessment strategies. There is no explanatory textbook
+// content. The model uses its own knowledge to explain topics; the database
+// tells it what level, depth, and outcomes apply for this student.
 // ============================================================================
 
 function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment {
@@ -80,6 +94,7 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
 
     const meta = r.payload.metadata;
 
+    // Pull top-level metadata from the highest-scoring chunk that has it
     if (!alignment.subject && meta?.subject) {
       alignment.subject    = meta.subject;
       alignment.level      = meta.level;
@@ -89,6 +104,8 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
       alignment.found      = true;
     }
 
+    // Every passing chunk goes into syllabusChunks — the model reads all of
+    // them to understand the full scope and depth expected at this level
     alignment.syllabusChunks.push(text);
   }
 
@@ -104,17 +121,25 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
 
 // ============================================================================
 // System prompt
+//
+// The database contains curriculum specification only — no textbook content.
+// The model explains topics from its own knowledge, calibrated to the curriculum.
 // ============================================================================
 
 function buildSystemPrompt(alignment: CurriculumAlignment, userRole: string): string {
-  const level = alignment.level ?? "secondary school";
 
+  // ── Identity ──────────────────────────────────────────────────────────────
+  const level = alignment.level ?? "secondary school";
   const identity = `You are Amooti, a warm and encouraging AI study assistant for Uganda's secondary school students.
 You have deep knowledge of all secondary school subjects. Your primary role is to explain things clearly, step by step, from foundations in language a student can follow.
 You always talk directly to the student — never write teacher notes, lesson plans, or syllabus summaries.
 Speak in a story format; like how you introduce things to children. Explore what makes that concept important; how are they likely to encounter that in future. Make learning fun and relatable.
 `;
 
+  // ── Curriculum alignment section ──────────────────────────────────────────
+  // This is the core of the architecture: give the model the curriculum spec
+  // so it knows what depth, scope, and outcomes apply — then tell it to
+  // explain from its OWN knowledge, not by reproducing the spec.
   const curriculumSection = alignment.found
     ? `
 ================================================================================
@@ -155,10 +180,13 @@ for a ${level} student working through this topic in the Uganda curriculum.`
 NO CURRICULUM MATCH FOUND
 ================================================================================
 The curriculum database did not return a relevant match for this query.
+This means either the topic didn't find a close enough match.
+
 Answer from your general knowledge of the subject at an appropriate secondary school level.
 You can use the search_curriculum tool with specific filters (subject, level, term, topic)
 to try finding the relevant syllabus section before answering.`;
 
+  // ── How to answer ─────────────────────────────────────────────────────────
   const answerRules = `
 ================================================================================
 HOW TO ANSWER
@@ -167,7 +195,7 @@ Structure every answer like a good teacher would explain it in class:
 
 1. HOOK — Start with one plain sentence that directly answers what the student asked; and also hooks them, maybe with an example from real life where the concept is used.
 
-2. BUILD — Develop the concept step by step; building from ideas and concepts they already learnt in previous terms/classes and in other subjects. One clear idea per paragraph.
+2. BUILD — Develop the concept step by step; building from idea and concepts they already learnt in previous terms/classes and in other subjects. One clear idea per paragraph.
    Start from what the student already knows and build upward.
    Use everyday analogies for abstract ideas ("think of it like a dozen, but for atoms").
 
@@ -182,18 +210,16 @@ TONE:
 • Be encouraging — if something is tricky, say so and slow down
 • Never be condescending
 
-FORMAT — CRITICAL MATH RENDERING RULES:
+FORMAT:
 • Use **bold** for key terms when first introduced
 • Use numbered steps for processes and calculations
 • Use bullet points for lists of related items
-• ALWAYS use $...$ for inline math — e.g. $n = \\frac{m}{M}$ — the app renders this with KaTeX
-• ALWAYS use $$...$$ on its own line for display/block equations — e.g.:
-  $$n = \\frac{\\text{mass (g)}}{\\text{molar mass (g mol}^{-1}\\text{)}}$$
-• NEVER use square bracket notation like \\[ ... \\] or [ ... ] for math — use $$ only
-• NEVER use round bracket notation like \\( ... \\) — use $ only
+• Use $...$ for inline math (e.g. $n = \\frac{m}{M}$) — the app renders this correctly
+• Use $$...$$ for display equations on their own line
 • Use markdown tables only when genuinely comparing multiple items
 • Keep length proportional to the question`;
 
+  // ── Tool instruction ──────────────────────────────────────────────────────
   const toolInstruction = `
 ================================================================================
 TOOL: search_curriculum
@@ -203,6 +229,7 @@ student asks about a specific term or subtopic not shown above.
 Parameters: query, subject, level, term, topic, content_type, limit.
 Use sparingly — only when the initial context is genuinely insufficient.`;
 
+  // ── History / account note ────────────────────────────────────────────────
   const accountNote = userRole === "school"
     ? `
 ================================================================================
@@ -315,10 +342,7 @@ async function executeTool(name: string, args: Record<string, any>): Promise<str
 }
 
 // ============================================================================
-// Chat providers — non-streaming
-// PURPOSE: Tool-call detection ONLY. We DO NOT use the text content from this
-// response — if no tool calls are needed, we discard the content and re-run
-// through the streaming endpoint so the student sees a real typed response.
+// Chat providers — non-streaming (tool-call detection pass)
 // ============================================================================
 
 async function chatNonStreaming(messages: any[], tools: any[]): Promise<any | null> {
@@ -326,6 +350,7 @@ async function chatNonStreaming(messages: any[], tools: any[]): Promise<any | nu
   const ollamaKey     = Deno.env.get("OLLAMA_API_KEY");
   const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
 
+  // Cerebras
   if (cerebrasKey) {
     console.log("[Chat/NonStream] Attempting Cerebras (gpt-oss-120b)…");
     try {
@@ -339,6 +364,7 @@ async function chatNonStreaming(messages: any[], tools: any[]): Promise<any | nu
     } catch (e) { console.error("[Chat/NonStream] Cerebras exception:", e); }
   }
 
+  // Ollama cloud
   if (ollamaKey) {
     console.log("[Chat/NonStream] Attempting Ollama cloud (gpt-oss:120b-cloud)…");
     try {
@@ -367,6 +393,7 @@ async function chatNonStreaming(messages: any[], tools: any[]): Promise<any | nu
     } catch (e) { console.error("[Chat/NonStream] Ollama exception:", e); }
   }
 
+  // OpenRouter
   if (openRouterKey) {
     console.log("[Chat/NonStream] Attempting OpenRouter (cerebras/gpt-oss-120b)…");
     try {
@@ -385,7 +412,7 @@ async function chatNonStreaming(messages: any[], tools: any[]): Promise<any | nu
 }
 
 // ============================================================================
-// Chat providers — streaming (always used for final answer)
+// Chat providers — streaming (final answer pass)
 // ============================================================================
 
 async function chatCerebrasStream(messages: any[], apiKey: string): Promise<Response | null> {
@@ -489,15 +516,6 @@ async function getStreamingResponse(messages: any[]): Promise<Response> {
 
 // ============================================================================
 // Agentic loop
-//
-// KEY FIX: The non-streaming pass is used ONLY to detect tool calls.
-// If the model returns content with no tool calls, we DISCARD that content
-// and re-run the messages through the streaming endpoint. This guarantees
-// the student always sees a real token-by-token streaming response.
-//
-// Flow:
-//   1. Non-stream pass → tool calls? → execute tools → repeat (up to MAX_TOOL_ROUNDS)
-//   2. No tool calls → stream the final answer from scratch
 // ============================================================================
 
 async function runAgenticLoop(messages: any[]): Promise<Response> {
@@ -506,33 +524,39 @@ async function runAgenticLoop(messages: any[]): Promise<Response> {
   let workingMessages = [...messages];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    console.log(`[Agent] Round ${round + 1}/${MAX_TOOL_ROUNDS} — non-streaming tool-detection pass`);
+    console.log(`[Agent] Round ${round + 1}/${MAX_TOOL_ROUNDS} — non-streaming pass`);
 
     const completion = await chatNonStreaming(workingMessages, tools);
     if (!completion) throw new Error("All providers failed during agentic loop");
 
-    const choice       = completion.choices?.[0];
-    const message      = choice?.message;
+    const choice      = completion.choices?.[0];
+    const message     = choice?.message;
     const finishReason = choice?.finish_reason;
 
     console.log(`[Agent] finish_reason: "${finishReason}"`);
 
-    // ── No tool calls: stream the final answer ─────────────────────────────
-    // We intentionally ignore message.content here — even if the non-streaming
-    // pass returned a full answer, we throw it away and re-ask via streaming.
-    // This is the critical fix: the student always gets a real streamed response.
     if (finishReason !== "tool_calls" || !message?.tool_calls?.length) {
-      console.log("[Agent] No tool calls detected — switching to streaming for final answer");
+      console.log("[Agent] No tool calls — proceeding to streaming answer");
+
+      if (message?.content) {
+        console.log("[Agent] Wrapping non-stream answer as SSE");
+        const encoder = new TextEncoder();
+        const content = message.content;
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+      }
+
       return getStreamingResponse(workingMessages);
     }
 
-    // ── Tool calls: execute them and add results to context ─────────────────
     console.log(`[Agent] Model requested ${message.tool_calls.length} tool call(s)`);
-    workingMessages.push({
-      role: "assistant",
-      content: message.content ?? null,
-      tool_calls: message.tool_calls,
-    });
+    workingMessages.push({ role: "assistant", content: message.content ?? null, tool_calls: message.tool_calls });
 
     for (const toolCall of message.tool_calls) {
       const toolName = toolCall.function?.name;
@@ -541,14 +565,8 @@ async function runAgenticLoop(messages: any[]): Promise<Response> {
         catch { console.error(`[Agent] Failed to parse args for "${toolName}"`); return {}; }
       })();
       const toolResult = await executeTool(toolName, toolArgs);
-      workingMessages.push({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: toolResult,
-      });
+      workingMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
     }
-    // Loop continues — the enriched context will go through non-stream again
-    // to check whether more tools are needed, then finally stream the answer
   }
 
   console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) — forcing final stream`);
@@ -591,9 +609,9 @@ serve(async (req) => {
   console.log(`[Request] ${req.method} ${req.url}`);
 
   try {
-    const QDRANT_URL                = Deno.env.get("QDRANT_URL");
-    const QDRANT_API_KEY            = Deno.env.get("QDRANT_API_KEY");
-    const SUPABASE_URL              = Deno.env.get("SUPABASE_URL");
+    const QDRANT_URL               = Deno.env.get("QDRANT_URL");
+    const QDRANT_API_KEY           = Deno.env.get("QDRANT_API_KEY");
+    const SUPABASE_URL             = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!QDRANT_URL)                throw new Error("QDRANT_URL not configured");
@@ -668,6 +686,8 @@ serve(async (req) => {
     console.log(`[Prompt] Built — ${systemPrompt.length} chars`);
 
     // Step 4: History strategy
+    // School: current message only (no persistent student, avoid context bloat)
+    // Student: full history (continuity across the session)
     const historyMessages = userRole === "school"
       ? [messages[messages.length - 1]]
       : messages;
@@ -675,26 +695,21 @@ serve(async (req) => {
     const fullMessages = [{ role: "system", content: systemPrompt }, ...historyMessages];
     console.log(`[Agent] Starting — ${fullMessages.length} messages (${userRole === "school" ? "school/current-only" : "student/full-history"})`);
 
-    // Step 5: Agentic loop → always streams the final answer
+    // Step 5: Agentic loop
     const agentStart = Date.now();
     const aiResponse = await runAgenticLoop(fullMessages);
     console.log(`[Agent] Complete in ${Date.now() - agentStart}ms | Total: ${Date.now() - requestStart}ms`);
 
-    // Propagate provider errors (non-SSE responses are error signals)
+    // Propagate provider errors
     const contentType = aiResponse.headers.get("Content-Type") || "";
     if (contentType.includes("application/json")) {
       const body = await aiResponse.text();
       console.error(`[Response] Provider error: ${body}`);
-      return new Response(body, {
-        status: aiResponse.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(body, { status: aiResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log(`[Response] Streaming to client`);
-    return new Response(aiResponse.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-    });
+    return new Response(aiResponse.body, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
 
   } catch (error) {
     console.error(`[Error] Unhandled after ${Date.now() - requestStart}ms:`, error);
