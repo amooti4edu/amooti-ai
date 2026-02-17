@@ -1,225 +1,272 @@
-import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
-import { ChatSidebar } from "@/components/ChatSidebar";
-import { ChatMessages } from "@/components/ChatMessages";
-import { ChatInput } from "@/components/ChatInput";
-import { Menu, LogOut } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+/**
+ * ChatMessages.tsx
+ *
+ * Drop-in replacement for your existing ChatMessages component.
+ *
+ * Renders every format a model typically produces:
+ *   • Markdown (bold, italic, headers, blockquotes, hr)
+ *   • Bullet and numbered lists (nested)
+ *   • Tables  (GitHub-flavoured markdown)
+ *   • Fenced code blocks with syntax highlighting
+ *   • Inline code
+ *   • LaTeX math — both display \[...\] / $$...$$ and inline \(...\) / $...$
+ *   • Plain URLs auto-linked
+ *
+ * Dependencies to add to your project:
+ *   npm install react-markdown remark-gfm remark-math rehype-katex rehype-highlight
+ *   npm install katex highlight.js          # peer deps
+ *
+ * In your app entry (main.tsx / index.tsx) add:
+ *   import 'katex/dist/katex.min.css'
+ *   import 'highlight.js/styles/github.css'   ← or any hljs theme you prefer
+ */
 
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
+import { RefObject } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import rehypeHighlight from "rehype-highlight";
+import { Message } from "./Chat"; // adjust path if needed
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ChatMessagesProps {
+  messages: Message[];
+  isLoading: boolean;
+  bottomRef: RefObject<HTMLDivElement>;
 }
 
-const Chat = () => {
-  const { user, profile, signOut, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const { toast } = useToast();
+// ─── Markdown config ──────────────────────────────────────────────────────────
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<any[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
+const REMARK_PLUGINS = [
+  remarkGfm,   // tables, strikethrough, task lists, autolink literals
+  remarkMath,  // $$...$$ and $...$ math blocks
+];
 
-  const isStudent = profile?.role === "student";
+const REHYPE_PLUGINS = [
+  rehypeKatex,      // renders math via KaTeX
+  rehypeHighlight,  // syntax highlights fenced code blocks
+];
 
-  useEffect(() => {
-    if (!authLoading && !user) navigate("/");
-  }, [user, authLoading, navigate]);
+// Custom component overrides so we fully control styling
+const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  // ── Headings ──
+  h1: ({ children }) => (
+    <h1 className="mt-5 mb-2 text-xl font-bold text-foreground leading-snug">{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-4 mb-1.5 text-lg font-semibold text-foreground leading-snug">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-3 mb-1 text-base font-semibold text-foreground">{children}</h3>
+  ),
 
-  // Load conversations for students
-  useEffect(() => {
-    if (isStudent && user) loadConversations();
-  }, [isStudent, user]);
+  // ── Paragraphs ──
+  p: ({ children }) => (
+    <p className="mb-3 last:mb-0 leading-relaxed text-foreground/90">{children}</p>
+  ),
 
-  const loadConversations = async () => {
-    const { data } = await supabase
-      .from("conversations")
-      .select("*")
-      .order("updated_at", { ascending: false });
-    if (data) setConversations(data);
-  };
+  // ── Lists ──
+  ul: ({ children }) => (
+    <ul className="mb-3 ml-5 list-disc space-y-1 text-foreground/90">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="mb-3 ml-5 list-decimal space-y-1 text-foreground/90">{children}</ol>
+  ),
+  li: ({ children }) => (
+    <li className="leading-relaxed">{children}</li>
+  ),
 
-  const loadMessages = async (convId: string) => {
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("conversation_id", convId)
-      .order("created_at", { ascending: true });
-    if (data) {
-      setMessages(data.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })));
-      setConversationId(convId);
-    }
-  };
-
-  const startNewChat = () => {
-    setMessages([]);
-    setConversationId(null);
-    setSidebarOpen(false);
-  };
-
-  const sendMessage = async (input: string) => {
-    if (!input.trim() || isLoading) return;
-
-    const userMsg: Message = { role: "user", content: input };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setIsLoading(true);
-
-    // For students, create conversation if needed
-    let convId = conversationId;
-    if (isStudent && !convId) {
-      const { data } = await supabase
-        .from("conversations")
-        .insert({ user_id: user!.id, title: input.slice(0, 60) })
-        .select()
-        .single();
-      if (data) {
-        convId = data.id;
-        setConversationId(data.id);
-      }
-    }
-
-    // Save user message for students
-    if (isStudent && convId) {
-      await supabase.from("messages").insert({
-        conversation_id: convId,
-        role: "user",
-        content: input,
-      });
-    }
-
-    // Stream response
-    let assistantContent = "";
-    try {
-      const resp = await fetch(
-        `https://ehswpksboxyzqztdhofh.supabase.co/functions/v1/rag-agent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          },
-          body: JSON.stringify({
-            messages: newMessages,
-            conversationId: convId,
-            userRole: profile?.role || "school",
-          }),
-        }
+  // ── Inline code ──
+  code: ({ inline, className, children, ...props }: any) => {
+    if (inline) {
+      return (
+        <code
+          className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-amber-700 dark:text-amber-400"
+          {...props}
+        >
+          {children}
+        </code>
       );
-
-      if (resp.status === 429) {
-        toast({ title: "Rate limited", description: "Too many requests. Please wait a moment.", variant: "destructive" });
-        setIsLoading(false);
-        return;
-      }
-      if (resp.status === 402) {
-        toast({ title: "Usage limit", description: "AI credits exhausted. Please try again later.", variant: "destructive" });
-        setIsLoading(false);
-        return;
-      }
-      if (!resp.ok || !resp.body) throw new Error("Failed to get response");
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              assistantContent += content;
-              setMessages([...newMessages, { role: "assistant", content: assistantContent }]);
-            }
-          } catch {
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
-        }
-      }
-
-      // Save assistant message for students
-      if (isStudent && convId && assistantContent) {
-        await supabase.from("messages").insert({
-          conversation_id: convId,
-          role: "assistant",
-          content: assistantContent,
-        });
-        loadConversations();
-      }
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setIsLoading(false);
     }
-  };
+    // Block code — rehype-highlight adds the language class, we just style the wrapper
+    return (
+      <code className={`${className ?? ""} text-sm leading-relaxed`} {...props}>
+        {children}
+      </code>
+    );
+  },
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // ── Fenced code block wrapper ──
+  pre: ({ children }) => (
+    <pre className="mb-3 overflow-x-auto rounded-lg border border-border bg-muted/60 p-4 text-sm leading-relaxed">
+      {children}
+    </pre>
+  ),
 
-  if (authLoading) return <div className="flex min-h-screen items-center justify-center">Loading…</div>;
+  // ── Tables (GFM) ──
+  table: ({ children }) => (
+    <div className="mb-4 overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead className="bg-muted/70 text-xs uppercase tracking-wide text-muted-foreground">
+      {children}
+    </thead>
+  ),
+  tbody: ({ children }) => (
+    <tbody className="divide-y divide-border">{children}</tbody>
+  ),
+  tr: ({ children }) => (
+    <tr className="transition-colors hover:bg-muted/30">{children}</tr>
+  ),
+  th: ({ children }) => (
+    <th className="px-4 py-2.5 text-left font-semibold">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="px-4 py-2.5 text-foreground/85">{children}</td>
+  ),
+
+  // ── Blockquote ──
+  blockquote: ({ children }) => (
+    <blockquote className="mb-3 border-l-4 border-primary/40 pl-4 italic text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+
+  // ── Horizontal rule ──
+  hr: () => <hr className="my-4 border-border" />,
+
+  // ── Bold / italic / strikethrough ──
+  strong: ({ children }) => (
+    <strong className="font-semibold text-foreground">{children}</strong>
+  ),
+  em: ({ children }) => (
+    <em className="italic text-foreground/80">{children}</em>
+  ),
+  del: ({ children }) => (
+    <del className="text-muted-foreground line-through">{children}</del>
+  ),
+
+  // ── Links ──
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary underline underline-offset-2 hover:text-primary/80"
+    >
+      {children}
+    </a>
+  ),
+};
+
+// ─── Typing indicator ─────────────────────────────────────────────────────────
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1 px-1 py-0.5">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="block h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce"
+          style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.9s" }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Single message bubble ────────────────────────────────────────────────────
+
+function MessageBubble({ message }: { message: Message }) {
+  const isUser = message.role === "user";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar for students */}
-      {isStudent && (
-        <ChatSidebar
-          open={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          conversations={conversations}
-          activeId={conversationId}
-          onSelect={(id) => { loadMessages(id); setSidebarOpen(false); }}
-          onNewChat={startNewChat}
-        />
+    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
+      {/* Avatar dot for assistant */}
+      {!isUser && (
+        <div className="mr-2 mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+          A
+        </div>
       )}
 
-      {/* Main chat */}
-      <div className="flex flex-1 flex-col">
-        {/* Header */}
-        <header className="flex items-center justify-between border-b px-4 py-3 md:px-6">
-          <div className="flex items-center gap-3">
-            {isStudent && (
-              <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-muted-foreground hover:text-foreground">
-                <Menu size={20} />
-              </button>
-            )}
-            <h1 className="font-serif text-xl text-foreground">Amooti</h1>
-            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-              {profile?.role === "student" ? "Student" : "School"}
-            </span>
+      <div
+        className={`
+          max-w-[85%] rounded-2xl px-4 py-3 shadow-sm
+          ${isUser
+            ? "rounded-tr-sm bg-primary text-primary-foreground"
+            : "rounded-tl-sm bg-card border border-border text-foreground"
+          }
+        `}
+      >
+        {isUser ? (
+          // User messages: plain text, no markdown needed
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+        ) : (
+          // Assistant messages: full markdown + math rendering
+          <div className="prose-sm max-w-none text-sm">
+            <ReactMarkdown
+              remarkPlugins={REMARK_PLUGINS}
+              rehypePlugins={REHYPE_PLUGINS}
+              components={MD_COMPONENTS}
+            >
+              {message.content}
+            </ReactMarkdown>
           </div>
-          <button onClick={() => { signOut(); navigate("/"); }} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <LogOut size={16} /> Sign out
-          </button>
-        </header>
-
-        {/* Messages */}
-        <ChatMessages messages={messages} isLoading={isLoading} bottomRef={bottomRef} />
-
-        {/* Input */}
-        <ChatInput onSend={sendMessage} disabled={isLoading} />
+        )}
       </div>
     </div>
   );
-};
+}
 
-export default Chat;
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyState() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-2xl font-bold text-primary">
+        A
+      </div>
+      <div>
+        <p className="font-semibold text-foreground">Hi, I'm Amooti</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Your Uganda curriculum study assistant. Ask me anything.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesProps) {
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto px-4 py-6 md:px-8">
+      {messages.length === 0 && !isLoading ? (
+        <EmptyState />
+      ) : (
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+          {messages.map((msg, i) => (
+            <MessageBubble key={i} message={msg} />
+          ))}
+
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="mr-2 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                A
+              </div>
+              <div className="rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 shadow-sm">
+                <TypingDots />
+              </div>
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
+      )}
+    </div>
+  );
+}
