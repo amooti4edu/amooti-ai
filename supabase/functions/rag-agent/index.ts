@@ -312,7 +312,9 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
 
   if (name === "search_curriculum") {
     try {
-      const result = await searchCurriculum(args);
+      const qdrantUrl = Deno.env.get("QDRANT_URL") ?? "";
+      const qdrantApiKey = Deno.env.get("QDRANT_API_KEY") ?? "";
+      const result = await searchCurriculum(args, qdrantUrl, qdrantApiKey);
       const resultStr = typeof result === "string" ? result : JSON.stringify(result);
       console.log(`[Tool] ✓ "${name}" returned ${resultStr.length} chars`);
       return resultStr;
@@ -635,7 +637,7 @@ async function runAgenticLoop(messages: unknown[]): Promise<Response> {
 // Rate limiting
 // ============================================================================
 
-async function enforceRateLimit(userId: string, supabaseAdmin: ReturnType<typeof createClient>): Promise<boolean> {
+async function enforceRateLimit(userId: string, supabaseAdmin: any): Promise<boolean> {
   const now        = new Date();
   const windowMs   = 60 * 1000;
   const maxRequests = 20;
@@ -711,7 +713,7 @@ serve(async (req) => {
 
     // Rate limit
     if (userId) {
-      const allowed = await enforceRateLimit(userId, supabaseAdmin);
+      const allowed = await enforceRateLimit(userId, supabaseAdmin as any);
       if (!allowed) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
           status: 429,
