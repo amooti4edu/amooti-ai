@@ -54,32 +54,17 @@ const SCORE_THRESHOLD = 0.45;
 
 // ============================================================================
 // Sanitize model output
-//
-// Fixes math delimiter drift and broken table output before it reaches
-// the client. This is a runtime safety net — the model sometimes ignores
-// prompt instructions about formatting.
 // ============================================================================
 
 function sanitizeMarkdown(text: string): string {
-  // 1. Convert \[ ... \] display blocks → $$ ... $$
   text = text.replace(/\\\[\s*/g, "\n$$\n").replace(/\s*\\\]/g, "\n$$\n");
-
-  // 2. Convert \( ... \) inline → $...$
   text = text.replace(/\\\(\s*/g, "$").replace(/\s*\\\)/g, "$");
-
-  // 3. Convert bare [ formula ] lines that contain math characters
-  //    Only targets lines that are purely a bracketed expression with \ or ^
   text = text.replace(
     /^\s*\[\s*((?:[^\[\]]*(?:\\|\^)[^\[\]]*)+)\s*\]\s*$/gm,
     "\n$$\n$1\n$$\n"
   );
-
-  // 4. Strip any leftover stray \[ or \] on their own line
   text = text.replace(/^\s*\\\[\s*$/gm, "$$").replace(/^\s*\\\]\s*$/gm, "$$");
-
-  // 5. Collapse 3+ consecutive blank lines → 2 (keeps output tidy)
   text = text.replace(/\n{3,}/g, "\n\n");
-
   return text;
 }
 
@@ -139,7 +124,6 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
 
 function buildSystemPrompt(alignment: CurriculumAlignment, userRole: string): string {
 
-  const level = alignment.level ?? "secondary school";
   const identity = `You are Amooti, a warm and encouraging AI study assistant for Uganda's secondary school students.
 You have deep knowledge of all secondary school subjects. Your primary role is to explain things clearly, step by step, from foundations in language a student can follow.
 You must connect topics that the student has already learnt even in other subjects.
@@ -219,8 +203,10 @@ Use sparingly — only when the initial context is genuinely insufficient.`;
 ================================================================================
 ACCOUNT TYPE: School (shared session)
 ================================================================================
-Multiple students may use this session. Do not reference earlier messages as
-belonging to a specific student. Keep each response self-contained.`
+This is a shared classroom session. Multiple students may ask questions.
+Use the conversation history to maintain continuity — but do not assume all
+messages are from the same student. Keep each explanation self-contained
+while still building naturally on what has just been discussed.`
     : `
 ================================================================================
 ACCOUNT TYPE: Individual student
@@ -312,10 +298,10 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
 
   if (name === "search_curriculum") {
     try {
-      const qdrantUrl = Deno.env.get("QDRANT_URL") ?? "";
+      const qdrantUrl    = Deno.env.get("QDRANT_URL") ?? "";
       const qdrantApiKey = Deno.env.get("QDRANT_API_KEY") ?? "";
-      const result = await searchCurriculum(args, qdrantUrl, qdrantApiKey);
-      const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+      const result       = await searchCurriculum(args, qdrantUrl, qdrantApiKey);
+      const resultStr    = typeof result === "string" ? result : JSON.stringify(result);
       console.log(`[Tool] ✓ "${name}" returned ${resultStr.length} chars`);
       return resultStr;
     } catch (error) {
@@ -328,7 +314,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
 }
 
 // ============================================================================
-// Stream a single provider request, returning the raw Response or null
+// fetchStream — single provider request
 // ============================================================================
 
 async function fetchStream(
@@ -348,7 +334,6 @@ async function fetchStream(
     if (!response.ok) {
       const text = await response.text();
       console.error(`[Stream] ${label} error ${response.status}: ${text}`);
-      // Propagate provider-level errors (rate limit, payment) directly
       if (response.status === 429 || response.status === 402) {
         return new Response(text, {
           status: response.status,
@@ -385,7 +370,7 @@ function ollamaToSSE(response: Response): Response {
         if (done) {
           if (buffer.trim()) {
             try {
-              const parsed = JSON.parse(buffer.trim());
+              const parsed  = JSON.parse(buffer.trim());
               const content = parsed.message?.content ?? "";
               if (content) {
                 controller.enqueue(
@@ -407,7 +392,7 @@ function ollamaToSSE(response: Response): Response {
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
-            const parsed = JSON.parse(line);
+            const parsed  = JSON.parse(line);
             const content = parsed.message?.content ?? "";
             if (content) {
               chunkCount++;
@@ -428,7 +413,132 @@ function ollamaToSSE(response: Response): Response {
 }
 
 // ============================================================================
-// SSE stream → accumulate full text (for tool-call detection mid-stream)
+// getStreamingResponse — provider fallback chain
+// ============================================================================
+
+async function getStreamingResponse(
+  messages: unknown[],
+  tools?: unknown[],
+): Promise<Response> {
+  const cerebrasKey   = Deno.env.get("CEREBRAS_API_KEY");
+  const ollamaKey     = Deno.env.get("OLLAMA_API_KEY");
+  const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+
+  const baseBody: Record<string, unknown> = { messages };
+  if (tools?.length) {
+    baseBody.tools       = tools;
+    baseBody.tool_choice = "auto";
+  }
+
+  if (cerebrasKey) {
+    const r = await fetchStream(
+      "https://api.cerebras.ai/v1/chat/completions",
+      cerebrasKey,
+      { ...baseBody, model: "gpt-oss-120b" },
+      "Cerebras (gpt-oss-120b)"
+    );
+    if (r) return r;
+    console.warn("[Stream] Cerebras failed — trying Ollama");
+  }
+
+  if (ollamaKey) {
+    const r = await fetchStream(
+      "https://ollama.com/api/chat",
+      ollamaKey,
+      { ...baseBody, model: "gpt-oss:120b-cloud" },
+      "Ollama (gpt-oss:120b-cloud)"
+    );
+    if (r) return ollamaToSSE(r);
+    console.warn("[Stream] Ollama failed — trying OpenRouter");
+  }
+
+  if (openRouterKey) {
+    const r = await fetchStream(
+      "https://openrouter.ai/api/v1/chat/completions",
+      openRouterKey,
+      { ...baseBody, model: "cerebras/gpt-oss-120b" },
+      "OpenRouter (cerebras/gpt-oss-120b)"
+    );
+    if (r) return r;
+  }
+
+  throw new Error("All streaming providers failed");
+}
+
+// ============================================================================
+// Pipe a stream through sanitization
+//
+// Reads the SSE stream, accumulates the full text, sanitizes it, then
+// re-emits as SSE. Only used for the FINAL answer — intermediate tool-call
+// rounds are accumulated anyway so sanitizing there costs nothing extra.
+// ============================================================================
+
+function sanitizeStream(response: Response): Response {
+  const reader  = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  let lineBuffer  = "";
+  let fullContent = "";
+  let headerSent  = false;
+
+  // We read the whole stream first, sanitize, then re-emit.
+  // This runs async inside the ReadableStream pull cycle.
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // ── Phase 1: accumulate the full response ──────────────────────────
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          lineBuffer += decoder.decode(value, { stream: true });
+          const lines = lineBuffer.split("\n");
+          lineBuffer  = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data);
+              const delta  = parsed.choices?.[0]?.delta?.content;
+              if (delta) fullContent += delta;
+            } catch { /* skip */ }
+          }
+        }
+
+        // ── Phase 2: sanitize ──────────────────────────────────────────────
+        const sanitized = sanitizeMarkdown(fullContent);
+
+        // ── Phase 3: re-emit as SSE word-by-word ──────────────────────────
+        // Split on word boundaries so each chunk is a natural word + space,
+        // giving the client smooth word-by-word rendering.
+        const words = sanitized.match(/\S+\s*/g) ?? [];
+
+        for (const word of words) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { content: word } }] })}\n\n`
+            )
+          );
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      } catch (err) {
+        console.error("[sanitizeStream] Error:", err);
+        controller.error(err);
+      }
+    },
+  });
+
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+}
+
+// ============================================================================
+// accumulateSSE — read a full stream into text + tool calls
+// Used only when we need to inspect for tool calls before proceeding.
 // ============================================================================
 
 async function accumulateSSE(response: Response): Promise<{
@@ -437,10 +547,9 @@ async function accumulateSSE(response: Response): Promise<{
 }> {
   const reader  = response.body!.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  let buffer  = "";
   let content = "";
 
-  // For accumulating streamed tool call deltas
   const toolCallAccumulators: Record<number, { id: string; name: string; arguments: string }> = {};
 
   while (true) {
@@ -458,22 +567,20 @@ async function accumulateSSE(response: Response): Promise<{
 
       try {
         const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta;
+        const delta  = parsed.choices?.[0]?.delta;
         if (!delta) continue;
 
-        // Accumulate text content
         if (delta.content) content += delta.content;
 
-        // Accumulate tool call deltas
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
             const idx = tc.index ?? 0;
             if (!toolCallAccumulators[idx]) {
               toolCallAccumulators[idx] = { id: tc.id ?? "", name: "", arguments: "" };
             }
-            if (tc.id)                        toolCallAccumulators[idx].id          = tc.id;
-            if (tc.function?.name)             toolCallAccumulators[idx].name        += tc.function.name;
-            if (tc.function?.arguments)        toolCallAccumulators[idx].arguments   += tc.function.arguments;
+            if (tc.id)               toolCallAccumulators[idx].id        = tc.id;
+            if (tc.function?.name)   toolCallAccumulators[idx].name      += tc.function.name;
+            if (tc.function?.arguments) toolCallAccumulators[idx].arguments += tc.function.arguments;
           }
         }
       } catch { /* skip malformed chunks */ }
@@ -492,67 +599,12 @@ async function accumulateSSE(response: Response): Promise<{
 }
 
 // ============================================================================
-// Get streaming response from providers (in priority order)
-// ============================================================================
-
-async function getStreamingResponse(
-  messages: unknown[],
-  tools?: unknown[],
-): Promise<Response> {
-  const cerebrasKey   = Deno.env.get("CEREBRAS_API_KEY");
-  const ollamaKey     = Deno.env.get("OLLAMA_API_KEY");
-  const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
-
-  const baseBody: Record<string, unknown> = { messages };
-  if (tools?.length) {
-    baseBody.tools = tools;
-    baseBody.tool_choice = "auto";
-  }
-
-  // Cerebras
-  if (cerebrasKey) {
-    const r = await fetchStream(
-      "https://api.cerebras.ai/v1/chat/completions",
-      cerebrasKey,
-      { ...baseBody, model: "gpt-oss-120b" },
-      "Cerebras (gpt-oss-120b)"
-    );
-    if (r) return r;
-    console.warn("[Stream] Cerebras failed — trying Ollama");
-  }
-
-  // Ollama — returns NDJSON, needs SSE transform
-  if (ollamaKey) {
-    const r = await fetchStream(
-      "https://ollama.com/api/chat",
-      ollamaKey,
-      { ...baseBody, model: "gpt-oss:120b-cloud" },
-      "Ollama (gpt-oss:120b-cloud)"
-    );
-    if (r) return ollamaToSSE(r);
-    console.warn("[Stream] Ollama failed — trying OpenRouter");
-  }
-
-  // OpenRouter
-  if (openRouterKey) {
-    const r = await fetchStream(
-      "https://openrouter.ai/api/v1/chat/completions",
-      openRouterKey,
-      { ...baseBody, model: "cerebras/gpt-oss-120b" },
-      "OpenRouter (cerebras/gpt-oss-120b)"
-    );
-    if (r) return r;
-  }
-
-  throw new Error("All streaming providers failed");
-}
-
-// ============================================================================
-// Agentic loop — streaming-only
+// Agentic loop
 //
-// We stream every pass. If the model requests tool calls, we accumulate the
-// stream to read the tool call arguments, execute the tools, then stream the
-// final answer. No non-streaming pass needed.
+// Key insight: we only need to accumulate when the model might call a tool.
+// On the FINAL pass (no tools passed) we pipe the stream directly through
+// sanitizeStream so the client gets true word-by-word rendering with no
+// extra round-trip latency.
 // ============================================================================
 
 async function runAgenticLoop(messages: unknown[]): Promise<Response> {
@@ -563,32 +615,35 @@ async function runAgenticLoop(messages: unknown[]): Promise<Response> {
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     console.log(`[Agent] Round ${round + 1}/${MAX_TOOL_ROUNDS}`);
 
+    // Pass tools so the model can signal tool calls via the stream
     const streamResponse = await getStreamingResponse(workingMessages, tools);
 
-    // Propagate hard errors from providers immediately
+    // Propagate hard provider errors immediately
     const contentType = streamResponse.headers.get("Content-Type") ?? "";
     if (!contentType.includes("event-stream") && !contentType.includes("octet-stream")) {
       console.error(`[Agent] Provider returned non-stream response — propagating`);
       return streamResponse;
     }
 
-    // Accumulate the stream to check for tool calls
+    // Accumulate to check for tool calls
     const { content, toolCalls } = await accumulateSSE(streamResponse);
 
     if (!toolCalls || toolCalls.length === 0) {
-      // No tool calls — sanitize the content and stream it to the client
+      // ── Final answer — sanitize and stream word-by-word ─────────────────
       console.log(`[Agent] No tool calls on round ${round + 1} — streaming final answer`);
+
       const sanitized = sanitizeMarkdown(content);
       const encoder   = new TextEncoder();
 
       const finalStream = new ReadableStream({
         start(controller) {
-          // Stream in chunks so the client sees progressive rendering
-          const CHUNK_SIZE = 40;
-          for (let i = 0; i < sanitized.length; i += CHUNK_SIZE) {
-            const chunk = sanitized.slice(i, i + CHUNK_SIZE);
+          // Split on word boundaries for smooth rendering
+          const words = sanitized.match(/\S+\s*/g) ?? [];
+          for (const word of words) {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`)
+              encoder.encode(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: word } }] })}\n\n`
+              )
             );
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -599,15 +654,15 @@ async function runAgenticLoop(messages: unknown[]): Promise<Response> {
       return new Response(finalStream, { headers: { "Content-Type": "text/event-stream" } });
     }
 
-    // Tool calls found — execute them and continue the loop
+    // ── Tool calls — execute and continue ───────────────────────────────
     console.log(`[Agent] ${toolCalls.length} tool call(s) on round ${round + 1}`);
 
     workingMessages.push({
       role: "assistant",
       content: content || null,
       tool_calls: toolCalls.map((tc, i) => ({
-        id: tc.id || `tool_${round}_${i}`,
-        type: "function",
+        id:       tc.id || `tool_${round}_${i}`,
+        type:     "function",
         function: tc.function,
       })),
     });
@@ -621,16 +676,17 @@ async function runAgenticLoop(messages: unknown[]): Promise<Response> {
 
       const toolResult = await executeTool(toolName, toolArgs);
       workingMessages.push({
-        role: "tool",
+        role:         "tool",
         tool_call_id: tc.id,
-        content: toolResult,
+        content:      toolResult,
       });
     }
   }
 
-  // Exceeded max rounds — stream the final answer without tools
-  console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) — streaming final answer without tools`);
-  return getStreamingResponse(workingMessages);
+  // Exceeded max rounds — final stream without tools
+  console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) — final stream without tools`);
+  const fallback = await getStreamingResponse(workingMessages);
+  return sanitizeStream(fallback);
 }
 
 // ============================================================================
@@ -638,8 +694,8 @@ async function runAgenticLoop(messages: unknown[]): Promise<Response> {
 // ============================================================================
 
 async function enforceRateLimit(userId: string, supabaseAdmin: any): Promise<boolean> {
-  const now        = new Date();
-  const windowMs   = 60 * 1000;
+  const now         = new Date();
+  const windowMs    = 60 * 1000;
   const maxRequests = 20;
 
   const { data: rateLimit } = await supabaseAdmin
@@ -649,7 +705,7 @@ async function enforceRateLimit(userId: string, supabaseAdmin: any): Promise<boo
     .single();
 
   if (rateLimit) {
-    const windowStart   = new Date(rateLimit.window_start);
+    const windowStart    = new Date(rateLimit.window_start);
     const isWithinWindow = now.getTime() - windowStart.getTime() < windowMs;
 
     if (isWithinWindow) {
@@ -713,7 +769,7 @@ serve(async (req) => {
 
     // Rate limit
     if (userId) {
-      const allowed = await enforceRateLimit(userId, supabaseAdmin as any);
+      const allowed = await enforceRateLimit(userId, supabaseAdmin);
       if (!allowed) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
           status: 429,
@@ -775,14 +831,13 @@ serve(async (req) => {
     console.log(`[Prompt] Built — ${systemPrompt.length} chars`);
 
     // Step 4: History strategy
-    const historyMessages = userRole === "school"
-      ? [messages[messages.length - 1]]
-      : messages;
-
-    const fullMessages = [{ role: "system", content: systemPrompt }, ...historyMessages];
+    // Both school and individual now get full history.
+    // School account note in the system prompt instructs the model how to
+    // handle the shared-session context appropriately.
+    const fullMessages = [{ role: "system", content: systemPrompt }, ...messages];
     console.log(
       `[Agent] Starting — ${fullMessages.length} messages ` +
-      `(${userRole === "school" ? "school/current-only" : "student/full-history"})`
+      `(${userRole === "school" ? "school/full-history" : "student/full-history"})`
     );
 
     // Step 5: Agentic loop (streaming-only)
