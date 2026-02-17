@@ -13,16 +13,26 @@ import "highlight.js/styles/github.css";
 
 const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
 
+// Phrases that cycle while waiting for the first token
+const THINKING_PHRASES = [
+  "Thinking…",
+  "Checking the syllabus…",
+  "Putting it together…",
+  "Almost there…",
+];
+
 export default function Chat() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
+  const [messages, setMessages]                     = useState<Message[]>([]);
+  const [isLoading, setIsLoading]                   = useState(false);
+  const [loadingPhrase, setLoadingPhrase]           = useState(THINKING_PHRASES[0]);
+  const [sidebarOpen, setSidebarOpen]               = useState(false);
+  const [conversations, setConversations]           = useState<any[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null!);
+  const bottomRef     = useRef<HTMLDivElement>(null!);
+  const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!loading && !session) navigate("/");
@@ -60,6 +70,23 @@ export default function Chat() {
       });
   }, [activeConversationId]);
 
+  // Start / stop the cycling loading phrase
+  const startLoadingPhrases = () => {
+    setLoadingPhrase(THINKING_PHRASES[0]);
+    let idx = 0;
+    phraseTimerRef.current = setInterval(() => {
+      idx = (idx + 1) % THINKING_PHRASES.length;
+      setLoadingPhrase(THINKING_PHRASES[idx]);
+    }, 1800);
+  };
+
+  const stopLoadingPhrases = () => {
+    if (phraseTimerRef.current) {
+      clearInterval(phraseTimerRef.current);
+      phraseTimerRef.current = null;
+    }
+  };
+
   const handleNewChat = () => {
     setActiveConversationId(null);
     setMessages([]);
@@ -76,18 +103,18 @@ export default function Chat() {
 
     const userMessage: Message = { role: "user", content };
 
-    // FIX: Snapshot the full message history (including the new user message)
-    // and set it immediately. We never replace this array during streaming —
-    // we only append to it. This is what prevents the question from disappearing.
+    // Commit the user message immediately and never touch it again.
+    // allMessages is the snapshot we send to the API — we do NOT derive
+    // it from state later, so React batching can never eat it.
     const allMessages: Message[] = [...messages, userMessage];
     setMessages(allMessages);
     setIsLoading(true);
+    startLoadingPhrases();
 
-    // Track the conversation ID locally so we don't rely on stale state
     let convId = activeConversationId;
 
     try {
-      // ── Conversation + message persistence ─────────────────────────────────
+      // ── Persistence ───────────────────────────────────────────────────────
       if (!convId) {
         const { data } = await supabase
           .from("conversations")
@@ -109,7 +136,7 @@ export default function Chat() {
         });
       }
 
-      // ── Get user role ───────────────────────────────────────────────────────
+      // ── Profile + token ───────────────────────────────────────────────────
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
@@ -118,13 +145,11 @@ export default function Chat() {
 
       const userRole = profile?.role || "student";
 
-      // ── Get access token ────────────────────────────────────────────────────
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-
       if (!accessToken) throw new Error("No access token — user may be logged out");
 
-      // ── Stream via fetch ────────────────────────────────────────────────────
+      // ── Fetch stream ──────────────────────────────────────────────────────
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/rag-agent`, {
         method: "POST",
         headers: {
@@ -137,7 +162,7 @@ export default function Chat() {
         }),
       });
 
-      // ── Handle provider-level errors ────────────────────────────────────────
+      // ── Provider-level errors ─────────────────────────────────────────────
       if (resp.status === 429) {
         setMessages((prev) => [
           ...prev,
@@ -159,14 +184,11 @@ export default function Chat() {
       }
       if (!resp.body) throw new Error("Response has no body");
 
-      // ── Read the SSE stream ─────────────────────────────────────────────────
-      // FIX: We add the empty assistant bubble HERE, AFTER the HTTP response
-      // arrives (not before). This means the user message is already committed
-      // to state and will never be overwritten.
-      const reader  = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantContent = "";
-      let textBuffer = "";
+      // ── Read the SSE stream ───────────────────────────────────────────────
+      const reader   = resp.body.getReader();
+      const decoder  = new TextDecoder();
+      let assistantContent    = "";
+      let textBuffer          = "";
       let assistantBubbleAdded = false;
 
       while (true) {
@@ -177,16 +199,11 @@ export default function Chat() {
 
         let newlineIndex: number;
         while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
+          let line   = textBuffer.slice(0, newlineIndex);
           textBuffer = textBuffer.slice(newlineIndex + 1);
 
-          // Normalise \r\n
           if (line.endsWith("\r")) line = line.slice(0, -1);
-
-          // Skip SSE comment lines and blank lines
           if (line.startsWith(":") || line.trim() === "") continue;
-
-          // Only process data lines
           if (!line.startsWith("data: ")) continue;
 
           const jsonStr = line.slice(6).trim();
@@ -194,12 +211,14 @@ export default function Chat() {
 
           try {
             const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices?.[0]?.delta?.content;
+            const delta  = parsed.choices?.[0]?.delta?.content;
             if (delta) {
-              // Add the assistant bubble on first actual token — this way
-              // the user message is definitely already rendered
+              // Stop the loading animation the moment the first token arrives
               if (!assistantBubbleAdded) {
                 assistantBubbleAdded = true;
+                stopLoadingPhrases();
+                // Append the assistant bubble — user message is already in
+                // state and will not be affected
                 setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
               }
 
@@ -211,27 +230,24 @@ export default function Chat() {
               });
             }
           } catch {
-            // Partial JSON chunk — requeue and wait for more data
+            // Partial JSON — requeue and wait for more data
             textBuffer = line + "\n" + textBuffer;
             break;
           }
         }
       }
 
-      // ── Fallback: nothing streamed ──────────────────────────────────────────
+      // ── Fallback: nothing streamed ────────────────────────────────────────
       if (!assistantContent) {
         console.warn("Stream ended with no content");
         setMessages((prev) => [
           ...prev,
-          {
-            role: "assistant",
-            content: "I didn't receive a response. Please try again.",
-          },
+          { role: "assistant", content: "I didn't receive a response. Please try again." },
         ]);
         return;
       }
 
-      // ── Persist assistant message ───────────────────────────────────────────
+      // ── Persist assistant message ─────────────────────────────────────────
       if (convId) {
         await supabase.from("messages").insert({
           conversation_id: convId,
@@ -248,21 +264,18 @@ export default function Chat() {
       }
     } catch (err: any) {
       console.error("Chat error:", err);
-      // If we never added an assistant bubble, append an error message.
-      // If we did (but streaming failed mid-way), replace it.
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         const errorMessage: Message = {
           role: "assistant",
           content: "Sorry, something went wrong. Please try again.",
         };
-        // Replace an empty or partial assistant bubble
-        if (last?.role === "assistant") {
-          return [...prev.slice(0, -1), errorMessage];
-        }
-        return [...prev, errorMessage];
+        return last?.role === "assistant"
+          ? [...prev.slice(0, -1), errorMessage]
+          : [...prev, errorMessage];
       });
     } finally {
+      stopLoadingPhrases();
       setIsLoading(false);
     }
   };
@@ -289,7 +302,14 @@ export default function Chat() {
           </button>
           <h1 className="font-serif text-lg font-semibold text-foreground">Amooti</h1>
         </header>
-        <ChatMessages messages={messages} isLoading={isLoading} bottomRef={bottomRef} />
+
+        <ChatMessages
+          messages={messages}
+          isLoading={isLoading}
+          loadingPhrase={loadingPhrase}
+          bottomRef={bottomRef}
+        />
+
         <ChatInput onSend={handleSend} disabled={isLoading} />
       </div>
     </div>
