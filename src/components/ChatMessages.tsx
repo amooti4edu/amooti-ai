@@ -10,10 +10,11 @@ import { Bot } from "lucide-react";
 interface ChatMessagesProps {
   messages: Message[];
   isLoading: boolean;
+  loadingPhrase: string;
   bottomRef: RefObject<HTMLDivElement>;
 }
 
-export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesProps) {
+export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: ChatMessagesProps) {
   // ── Empty state ────────────────────────────────────────────────────────────
   if (messages.length === 0 && !isLoading) {
     return (
@@ -41,11 +42,7 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
           </div>
         ) : (
           // ── Assistant message — full width, written on the page ─────────────
-          <div
-            key={i}
-            className="w-full px-4 md:px-8 py-5 animate-fade-in"
-          >
-            {/* Subtle top rule to visually open a new "page section" */}
+          <div key={i} className="w-full px-4 md:px-8 py-5 animate-fade-in">
             <div className="mb-4 flex items-center gap-2.5">
               <div className="flex-shrink-0 rounded-full bg-accent/15 p-1.5">
                 <Bot size={14} className="text-accent" />
@@ -87,7 +84,7 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
         )
       )}
 
-      {/* Typing dots — shown only while waiting for first token */}
+      {/* Loading indicator — shown while waiting for the first token */}
       {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user") && (
         <div className="w-full px-4 md:px-8 py-5 animate-fade-in">
           <div className="mb-4 flex items-center gap-2.5">
@@ -98,10 +95,33 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
               Amooti
             </span>
           </div>
-          <div className="flex items-center gap-1.5 pl-0.5">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" />
-            <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
-            <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
+          <div className="flex items-center gap-2 pl-0.5">
+            {/* Spinner */}
+            <svg
+              className="w-3.5 h-3.5 animate-spin text-accent"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12" cy="12" r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+              />
+            </svg>
+            {/* Cycling phrase — transitions smoothly on change */}
+            <span
+              key={loadingPhrase}
+              className="text-sm text-muted-foreground animate-fade-in"
+            >
+              {loadingPhrase}
+            </span>
           </div>
         </div>
       )}
