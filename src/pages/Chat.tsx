@@ -11,7 +11,6 @@ import type { Message } from "@/types/chat";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github.css";
 
-// The Supabase project URL — used for direct fetch streaming
 const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
 
 export default function Chat() {
@@ -33,7 +32,6 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  // Load conversations
   useEffect(() => {
     if (!session) return;
     supabase
@@ -46,7 +44,6 @@ export default function Chat() {
       });
   }, [session]);
 
-  // Load messages when conversation changes
   useEffect(() => {
     if (!activeConversationId) return;
     supabase
@@ -78,16 +75,19 @@ export default function Chat() {
     if (!session || isLoading) return;
 
     const userMessage: Message = { role: "user", content };
-    const allMessages: Message[] = [...messages, userMessage];
 
-    // Optimistically show user message immediately
+    // FIX: Snapshot the full message history (including the new user message)
+    // and set it immediately. We never replace this array during streaming —
+    // we only append to it. This is what prevents the question from disappearing.
+    const allMessages: Message[] = [...messages, userMessage];
     setMessages(allMessages);
     setIsLoading(true);
 
+    // Track the conversation ID locally so we don't rely on stale state
+    let convId = activeConversationId;
+
     try {
       // ── Conversation + message persistence ─────────────────────────────────
-      let convId = activeConversationId;
-
       if (!convId) {
         const { data } = await supabase
           .from("conversations")
@@ -124,7 +124,7 @@ export default function Chat() {
 
       if (!accessToken) throw new Error("No access token — user may be logged out");
 
-      // ── Stream via fetch (supabase.functions.invoke doesn't support streaming) ──
+      // ── Stream via fetch ────────────────────────────────────────────────────
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/rag-agent`, {
         method: "POST",
         headers: {
@@ -160,13 +160,14 @@ export default function Chat() {
       if (!resp.body) throw new Error("Response has no body");
 
       // ── Read the SSE stream ─────────────────────────────────────────────────
+      // FIX: We add the empty assistant bubble HERE, AFTER the HTTP response
+      // arrives (not before). This means the user message is already committed
+      // to state and will never be overwritten.
       const reader  = resp.body.getReader();
       const decoder = new TextDecoder();
       let assistantContent = "";
       let textBuffer = "";
-
-      // Add an empty assistant bubble immediately so the user sees the typing indicator stop
-      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+      let assistantBubbleAdded = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -174,7 +175,6 @@ export default function Chat() {
 
         textBuffer += decoder.decode(value, { stream: true });
 
-        // Process complete lines from the buffer
         let newlineIndex: number;
         while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
           let line = textBuffer.slice(0, newlineIndex);
@@ -196,8 +196,14 @@ export default function Chat() {
             const parsed = JSON.parse(jsonStr);
             const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) {
+              // Add the assistant bubble on first actual token — this way
+              // the user message is definitely already rendered
+              if (!assistantBubbleAdded) {
+                assistantBubbleAdded = true;
+                setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+              }
+
               assistantContent += delta;
-              // Update the last message in state (the assistant bubble we added above)
               setMessages((prev) => {
                 const updated = [...prev];
                 updated[updated.length - 1] = { role: "assistant", content: assistantContent };
@@ -205,24 +211,23 @@ export default function Chat() {
               });
             }
           } catch {
-            // Partial JSON chunk — put it back and wait for more
+            // Partial JSON chunk — requeue and wait for more data
             textBuffer = line + "\n" + textBuffer;
             break;
           }
         }
       }
 
-      // ── Fallback: if nothing streamed, show a sensible error ───────────────
+      // ── Fallback: nothing streamed ──────────────────────────────────────────
       if (!assistantContent) {
         console.warn("Stream ended with no content");
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
+        setMessages((prev) => [
+          ...prev,
+          {
             role: "assistant",
             content: "I didn't receive a response. Please try again.",
-          };
-          return updated;
-        });
+          },
+        ]);
         return;
       }
 
@@ -234,7 +239,6 @@ export default function Chat() {
           content: assistantContent,
         });
 
-        // Refresh sidebar conversation list (updates title/timestamp)
         supabase
           .from("conversations")
           .select("*")
@@ -244,14 +248,19 @@ export default function Chat() {
       }
     } catch (err: any) {
       console.error("Chat error:", err);
+      // If we never added an assistant bubble, append an error message.
+      // If we did (but streaming failed mid-way), replace it.
       setMessages((prev) => {
-        // Replace empty assistant bubble if one was added, otherwise append
         const last = prev[prev.length - 1];
-        const withError = { role: "assistant" as const, content: "Sorry, something went wrong. Please try again." };
-        if (last?.role === "assistant" && last.content === "") {
-          return [...prev.slice(0, -1), withError];
+        const errorMessage: Message = {
+          role: "assistant",
+          content: "Sorry, something went wrong. Please try again.",
+        };
+        // Replace an empty or partial assistant bubble
+        if (last?.role === "assistant") {
+          return [...prev.slice(0, -1), errorMessage];
         }
-        return [...prev, withError];
+        return [...prev, errorMessage];
       });
     } finally {
       setIsLoading(false);
