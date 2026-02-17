@@ -116,15 +116,33 @@ export default function Chat() {
 
       const resp = await supabase.functions.invoke("rag-agent", {
         body: { messages: allMessages, userRole: profile?.role || "student" },
+        headers: { Accept: "text/event-stream" },
       });
 
       // Handle streaming or plain response
       let assistantContent = "";
 
-      if (resp.data && typeof resp.data === "object" && "message" in resp.data) {
+      if (resp.error) {
+        assistantContent = "Sorry, something went wrong. Please try again.";
+        console.error("Edge function error:", resp.error);
+      } else if (resp.data instanceof Blob) {
+        // supabase.functions.invoke returns Blob for non-JSON responses
+        const text = await resp.data.text();
+        const lines = text.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) assistantContent += delta;
+            } catch {
+              // skip
+            }
+          }
+        }
+      } else if (resp.data && typeof resp.data === "object" && "message" in resp.data) {
         assistantContent = resp.data.message;
       } else if (typeof resp.data === "string") {
-        // Parse SSE stream
         const lines = resp.data.split("\n");
         for (const line of lines) {
           if (line.startsWith("data: ") && line !== "data: [DONE]") {
@@ -137,9 +155,6 @@ export default function Chat() {
             }
           }
         }
-      } else if (resp.error) {
-        assistantContent = "Sorry, something went wrong. Please try again.";
-        console.error("Edge function error:", resp.error);
       }
 
       if (!assistantContent) {
