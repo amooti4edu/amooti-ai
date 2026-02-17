@@ -1,5 +1,9 @@
 import ReactMarkdown from "react-markdown";
-import type { Message } from "@/pages/Chat";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import rehypeHighlight from "rehype-highlight";
+import type { Message } from "@/types/chat";
 import { RefObject } from "react";
 import { Bot, User } from "lucide-react";
 
@@ -42,8 +46,13 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
             }`}
           >
             {msg.role === "assistant" ? (
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+            <div className="prose prose-sm max-w-none">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                >
+                  {msg.content}
+                </ReactMarkdown>
               </div>
             ) : (
               msg.content
