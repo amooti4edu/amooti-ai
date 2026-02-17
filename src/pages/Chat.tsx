@@ -125,33 +125,36 @@ export default function Chat() {
       if (resp.error) {
         assistantContent = "Sorry, something went wrong. Please try again.";
         console.error("Edge function error:", resp.error);
-      } else if (resp.data instanceof Blob) {
-        // supabase.functions.invoke returns Blob for non-JSON responses
-        const text = await resp.data.text();
-        const lines = text.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ") && line !== "data: [DONE]") {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              const delta = parsed.choices?.[0]?.delta?.content;
-              if (delta) assistantContent += delta;
-            } catch {
-              // skip
-            }
+      } else {
+        // Get raw text from response regardless of type
+        let rawText = "";
+        if (resp.data instanceof Blob) {
+          rawText = await resp.data.text();
+        } else if (typeof resp.data === "string") {
+          rawText = resp.data;
+        } else if (resp.data && typeof resp.data === "object") {
+          // Already parsed JSON — check for message or SSE-like content
+          if ("message" in resp.data) {
+            assistantContent = resp.data.message;
+          } else if (resp.data.choices?.[0]?.delta?.content) {
+            assistantContent = resp.data.choices[0].delta.content;
           }
         }
-      } else if (resp.data && typeof resp.data === "object" && "message" in resp.data) {
-        assistantContent = resp.data.message;
-      } else if (typeof resp.data === "string") {
-        const lines = resp.data.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ") && line !== "data: [DONE]") {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              const delta = parsed.choices?.[0]?.delta?.content;
-              if (delta) assistantContent += delta;
-            } catch {
-              // skip
+
+        // Parse SSE lines from raw text
+        if (rawText && !assistantContent) {
+          const lines = rawText.split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (delta) assistantContent += delta;
+              } catch {
+                // If not JSON, use raw data content
+                assistantContent += trimmed.slice(6);
+              }
             }
           }
         }
