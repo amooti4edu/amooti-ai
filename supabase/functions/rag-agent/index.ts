@@ -64,6 +64,15 @@ function sanitizeMarkdown(text: string): string {
     "\n$$\n$1\n$$\n"
   );
   text = text.replace(/^\s*\\\[\s*$/gm, "$$").replace(/^\s*\\\]\s*$/gm, "$$");
+
+  // Replace literal <br> / <br/> / <BR> tags with a real newline
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+
+  // If a bullet (• or -) immediately follows a non-whitespace character,
+  // inject a newline so it renders as a proper list item instead of
+  // running on from the preceding word. e.g. "composition•" → "composition\n•"
+  text = text.replace(/(\S)(•|-(?=\s))/g, "$1\n$2");
+
   text = text.replace(/\n{3,}/g, "\n\n");
   return text;
 }
