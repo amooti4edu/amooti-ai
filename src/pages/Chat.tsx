@@ -11,6 +11,9 @@ import type { Message } from "@/types/chat";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github.css";
 
+// The Supabase project URL — used for direct fetch streaming
+const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
+
 export default function Chat() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
@@ -53,7 +56,9 @@ export default function Chat() {
       .order("created_at", { ascending: true })
       .then(({ data }) => {
         if (data) {
-          setMessages(data.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })));
+          setMessages(
+            data.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+          );
         }
       });
   }, [activeConversationId]);
@@ -70,15 +75,19 @@ export default function Chat() {
   };
 
   const handleSend = async (content: string) => {
-    if (!session) return;
+    if (!session || isLoading) return;
 
     const userMessage: Message = { role: "user", content };
-    setMessages((prev) => [...prev, userMessage]);
+    const allMessages: Message[] = [...messages, userMessage];
+
+    // Optimistically show user message immediately
+    setMessages(allMessages);
     setIsLoading(true);
 
     try {
-      // Create conversation if needed
+      // ── Conversation + message persistence ─────────────────────────────────
       let convId = activeConversationId;
+
       if (!convId) {
         const { data } = await supabase
           .from("conversations")
@@ -92,7 +101,6 @@ export default function Chat() {
         }
       }
 
-      // Save user message
       if (convId) {
         await supabase.from("messages").insert({
           conversation_id: convId,
@@ -101,86 +109,150 @@ export default function Chat() {
         });
       }
 
-      // Call edge function with full messages array
-      const allMessages = [...messages, userMessage].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      // Get user role from profile
+      // ── Get user role ───────────────────────────────────────────────────────
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("user_id", session.user.id)
         .single();
 
-      const resp = await supabase.functions.invoke("rag-agent", {
-        body: { messages: allMessages, userRole: profile?.role || "student" },
-        headers: { Accept: "text/event-stream" },
+      const userRole = profile?.role || "student";
+
+      // ── Get access token ────────────────────────────────────────────────────
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) throw new Error("No access token — user may be logged out");
+
+      // ── Stream via fetch (supabase.functions.invoke doesn't support streaming) ──
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/rag-agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+          userRole,
+        }),
       });
 
-      // Handle streaming or plain response
+      // ── Handle provider-level errors ────────────────────────────────────────
+      if (resp.status === 429) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "You're sending messages too quickly. Please wait a moment and try again." },
+        ]);
+        return;
+      }
+      if (resp.status === 402) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "AI credits are temporarily exhausted. Please try again shortly." },
+        ]);
+        return;
+      }
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error("Edge function error:", resp.status, errText);
+        throw new Error(`Edge function returned ${resp.status}`);
+      }
+      if (!resp.body) throw new Error("Response has no body");
+
+      // ── Read the SSE stream ─────────────────────────────────────────────────
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
       let assistantContent = "";
+      let textBuffer = "";
 
-      if (resp.error) {
-        assistantContent = "Sorry, something went wrong. Please try again.";
-        console.error("Edge function error:", resp.error);
-      } else {
-        // Get raw text from response regardless of type
-        let rawText = "";
-        if (resp.data instanceof Blob) {
-          rawText = await resp.data.text();
-        } else if (typeof resp.data === "string") {
-          rawText = resp.data;
-        } else if (resp.data && typeof resp.data === "object") {
-          // Already parsed JSON — check for message or SSE-like content
-          if ("message" in resp.data) {
-            assistantContent = resp.data.message;
-          } else if (resp.data.choices?.[0]?.delta?.content) {
-            assistantContent = resp.data.choices[0].delta.content;
-          }
-        }
+      // Add an empty assistant bubble immediately so the user sees the typing indicator stop
+      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
-        // Parse SSE lines from raw text
-        if (rawText && !assistantContent) {
-          const lines = rawText.split("\n");
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("data: ") && trimmed !== "data: [DONE]") {
-              try {
-                const parsed = JSON.parse(trimmed.slice(6));
-                const delta = parsed.choices?.[0]?.delta?.content;
-                if (delta) assistantContent += delta;
-              } catch {
-                // If not JSON, use raw data content
-                assistantContent += trimmed.slice(6);
-              }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        textBuffer += decoder.decode(value, { stream: true });
+
+        // Process complete lines from the buffer
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          // Normalise \r\n
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+
+          // Skip SSE comment lines and blank lines
+          if (line.startsWith(":") || line.trim() === "") continue;
+
+          // Only process data lines
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              assistantContent += delta;
+              // Update the last message in state (the assistant bubble we added above)
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+                return updated;
+              });
             }
+          } catch {
+            // Partial JSON chunk — put it back and wait for more
+            textBuffer = line + "\n" + textBuffer;
+            break;
           }
         }
       }
 
+      // ── Fallback: if nothing streamed, show a sensible error ───────────────
       if (!assistantContent) {
-        assistantContent = "Sorry, I couldn't generate a response. Please try again.";
+        console.warn("Stream ended with no content");
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: "I didn't receive a response. Please try again.",
+          };
+          return updated;
+        });
+        return;
       }
 
-      const assistantMessage: Message = { role: "assistant", content: assistantContent };
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // Save assistant message
+      // ── Persist assistant message ───────────────────────────────────────────
       if (convId) {
         await supabase.from("messages").insert({
           conversation_id: convId,
           role: "assistant",
           content: assistantContent,
         });
+
+        // Refresh sidebar conversation list (updates title/timestamp)
+        supabase
+          .from("conversations")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .order("updated_at", { ascending: false })
+          .then(({ data }) => { if (data) setConversations(data); });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Chat error:", err);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Sorry, an error occurred. Please try again." },
-      ]);
+      setMessages((prev) => {
+        // Replace empty assistant bubble if one was added, otherwise append
+        const last = prev[prev.length - 1];
+        const withError = { role: "assistant" as const, content: "Sorry, something went wrong. Please try again." };
+        if (last?.role === "assistant" && last.content === "") {
+          return [...prev.slice(0, -1), withError];
+        }
+        return [...prev, withError];
+      });
     } finally {
       setIsLoading(false);
     }
@@ -200,7 +272,10 @@ export default function Chat() {
       />
       <div className="flex flex-1 flex-col min-w-0">
         <header className="flex items-center gap-3 border-b px-4 py-3">
-          <button onClick={() => setSidebarOpen(true)} className="rounded-md p-1.5 hover:bg-muted lg:hidden">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-md p-1.5 hover:bg-muted lg:hidden"
+          >
             <Menu size={20} />
           </button>
           <h1 className="font-serif text-lg font-semibold text-foreground">Amooti</h1>
