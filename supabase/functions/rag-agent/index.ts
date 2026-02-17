@@ -41,33 +41,50 @@ interface CurriculumAlignment {
   term?: string;
   topic?: string;
   competency?: string;
-  // What the student should be able to do — extracted from learning outcomes chunks
   learningOutcomes: string[];
-  // Raw syllabus chunks for the model to read and understand scope/depth
   syllabusChunks: string[];
-  // Whether we found anything relevant at all
   found: boolean;
 }
 
 // ============================================================================
 // Score threshold
-//
-// Chunks below this score are from unrelated subjects and should be dropped.
-// In testing, a moles query pulled Biology chunks at ~0.51.
-// Relevant Chemistry chunks scored ~0.52+. Threshold set conservatively at 0.50
-// to avoid dropping edge cases — the prompt handles irrelevant content gracefully.
-// Raise to 0.55–0.60 if you see persistent cross-subject contamination.
 // ============================================================================
 
 const SCORE_THRESHOLD = 0.45;
 
 // ============================================================================
-// Parse curriculum alignment from Qdrant results
+// Sanitize model output
 //
-// ALL chunks in your database are syllabus specification data — learning outcomes,
-// teaching activities, assessment strategies. There is no explanatory textbook
-// content. The model uses its own knowledge to explain topics; the database
-// tells it what level, depth, and outcomes apply for this student.
+// Fixes math delimiter drift and broken table output before it reaches
+// the client. This is a runtime safety net — the model sometimes ignores
+// prompt instructions about formatting.
+// ============================================================================
+
+function sanitizeMarkdown(text: string): string {
+  // 1. Convert \[ ... \] display blocks → $$ ... $$
+  text = text.replace(/\\\[\s*/g, "\n$$\n").replace(/\s*\\\]/g, "\n$$\n");
+
+  // 2. Convert \( ... \) inline → $...$
+  text = text.replace(/\\\(\s*/g, "$").replace(/\s*\\\)/g, "$");
+
+  // 3. Convert bare [ formula ] lines that contain math characters
+  //    Only targets lines that are purely a bracketed expression with \ or ^
+  text = text.replace(
+    /^\s*\[\s*((?:[^\[\]]*(?:\\|\^)[^\[\]]*)+)\s*\]\s*$/gm,
+    "\n$$\n$1\n$$\n"
+  );
+
+  // 4. Strip any leftover stray \[ or \] on their own line
+  text = text.replace(/^\s*\\\[\s*$/gm, "$$").replace(/^\s*\\\]\s*$/gm, "$$");
+
+  // 5. Collapse 3+ consecutive blank lines → 2 (keeps output tidy)
+  text = text.replace(/\n{3,}/g, "\n\n");
+
+  return text;
+}
+
+// ============================================================================
+// Parse curriculum alignment from Qdrant results
 // ============================================================================
 
 function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment {
@@ -94,7 +111,6 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
 
     const meta = r.payload.metadata;
 
-    // Pull top-level metadata from the highest-scoring chunk that has it
     if (!alignment.subject && meta?.subject) {
       alignment.subject    = meta.subject;
       alignment.level      = meta.level;
@@ -104,8 +120,6 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
       alignment.found      = true;
     }
 
-    // Every passing chunk goes into syllabusChunks — the model reads all of
-    // them to understand the full scope and depth expected at this level
     alignment.syllabusChunks.push(text);
   }
 
@@ -120,15 +134,11 @@ function parseCurriculumAlignment(results: QdrantResult[]): CurriculumAlignment 
 }
 
 // ============================================================================
-// System prompt
-//
-// The database contains curriculum specification only — no textbook content.
-// The model explains topics from its own knowledge, calibrated to the curriculum.
+// System prompt — UNCHANGED
 // ============================================================================
 
 function buildSystemPrompt(alignment: CurriculumAlignment, userRole: string): string {
 
-  // ── Identity ──────────────────────────────────────────────────────────────
   const level = alignment.level ?? "secondary school";
   const identity = `You are Amooti, a warm and encouraging AI study assistant for Uganda's secondary school students.
 You have deep knowledge of all secondary school subjects. Your primary role is to explain things clearly, step by step, from foundations in language a student can follow.
@@ -136,10 +146,6 @@ You must connect topics that the student has already learnt even in other subjec
 Speak in a story format; like how you introduce things to children. Explore what makes that concept important; how are they likely to encounter that in future. Make learning fun and relatable.
 `;
 
-  // ── Curriculum alignment section ──────────────────────────────────────────
-  // This is the core of the architecture: give the model the curriculum spec
-  // so it knows what depth, scope, and outcomes apply — then tell it to
-  // explain from its OWN knowledge, not by reproducing the spec.
   const curriculumSection = alignment.found
     ? `
 ================================================================================
@@ -165,7 +171,6 @@ Your explanation must come from your own knowledge of the subject, pitched corre
 for a student working through this topic in the Uganda curriculum.`
     : ``;
 
-  // ── How to answer ─────────────────────────────────────────────────────────
   const answerRules = `
 ================================================================================
 HOW TO ANSWER
@@ -200,7 +205,6 @@ FORMAT:
 • Use markdown tables only when genuinely comparing multiple items
 • Keep length proportional to the question`;
 
-  // ── Tool instruction ──────────────────────────────────────────────────────
   const toolInstruction = `
 ================================================================================
 TOOL: search_curriculum
@@ -210,7 +214,6 @@ student asks about a specific term or subtopic not shown above.
 Parameters: query, subject, level, term, topic, content_type, limit.
 Use sparingly — only when the initial context is genuinely insufficient.`;
 
-  // ── History / account note ────────────────────────────────────────────────
   const accountNote = userRole === "school"
     ? `
 ================================================================================
@@ -304,7 +307,7 @@ const CURRICULUM_SEARCH_TOOL = {
 // Tool executor
 // ============================================================================
 
-async function executeTool(name: string, args: Record<string, any>): Promise<string> {
+async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
   console.log(`[Tool] Executing "${name}" with args:`, JSON.stringify(args));
 
   if (name === "search_curriculum") {
@@ -323,234 +326,308 @@ async function executeTool(name: string, args: Record<string, any>): Promise<str
 }
 
 // ============================================================================
-// Chat providers — non-streaming (tool-call detection pass)
+// Stream a single provider request, returning the raw Response or null
 // ============================================================================
 
-async function chatNonStreaming(messages: any[], tools: any[]): Promise<any | null> {
+async function fetchStream(
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+  label: string
+): Promise<Response | null> {
+  console.log(`[Stream] Attempting ${label}…`);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, stream: true }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[Stream] ${label} error ${response.status}: ${text}`);
+      // Propagate provider-level errors (rate limit, payment) directly
+      if (response.status === 429 || response.status === 402) {
+        return new Response(text, {
+          status: response.status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return null;
+    }
+
+    console.log(`[Stream] ✓ ${label} streaming`);
+    return response;
+  } catch (e) {
+    console.error(`[Stream] ${label} exception:`, e);
+    return null;
+  }
+}
+
+// ============================================================================
+// Transform Ollama NDJSON stream → SSE stream
+// ============================================================================
+
+function ollamaToSSE(response: Response): Response {
+  const reader  = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+  let chunkCount = 0;
+
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          if (buffer.trim()) {
+            try {
+              const parsed = JSON.parse(buffer.trim());
+              const content = parsed.message?.content ?? "";
+              if (content) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`)
+                );
+              }
+            } catch { /* ignore malformed trailing data */ }
+          }
+          console.log(`[Stream] Ollama complete — ${chunkCount} chunks`);
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            const content = parsed.message?.content ?? "";
+            if (content) {
+              chunkCount++;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`)
+              );
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      } catch (error) {
+        console.error("[Stream] Ollama read error:", error);
+        controller.error(error);
+      }
+    },
+  });
+
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+}
+
+// ============================================================================
+// SSE stream → accumulate full text (for tool-call detection mid-stream)
+// ============================================================================
+
+async function accumulateSSE(response: Response): Promise<{
+  content: string;
+  toolCalls: Array<{ id: string; function: { name: string; arguments: string } }> | null;
+}> {
+  const reader  = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+
+  // For accumulating streamed tool call deltas
+  const toolCallAccumulators: Record<number, { id: string; name: string; arguments: string }> = {};
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") continue;
+
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        // Accumulate text content
+        if (delta.content) content += delta.content;
+
+        // Accumulate tool call deltas
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            if (!toolCallAccumulators[idx]) {
+              toolCallAccumulators[idx] = { id: tc.id ?? "", name: "", arguments: "" };
+            }
+            if (tc.id)                        toolCallAccumulators[idx].id          = tc.id;
+            if (tc.function?.name)             toolCallAccumulators[idx].name        += tc.function.name;
+            if (tc.function?.arguments)        toolCallAccumulators[idx].arguments   += tc.function.arguments;
+          }
+        }
+      } catch { /* skip malformed chunks */ }
+    }
+  }
+
+  const toolCallEntries = Object.values(toolCallAccumulators);
+  const toolCalls = toolCallEntries.length > 0
+    ? toolCallEntries.map(tc => ({
+        id: tc.id,
+        function: { name: tc.name, arguments: tc.arguments },
+      }))
+    : null;
+
+  return { content, toolCalls };
+}
+
+// ============================================================================
+// Get streaming response from providers (in priority order)
+// ============================================================================
+
+async function getStreamingResponse(
+  messages: unknown[],
+  tools?: unknown[],
+): Promise<Response> {
   const cerebrasKey   = Deno.env.get("CEREBRAS_API_KEY");
   const ollamaKey     = Deno.env.get("OLLAMA_API_KEY");
   const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
 
-  // Cerebras
-  if (cerebrasKey) {
-    console.log("[Chat/NonStream] Attempting Cerebras (gpt-oss-120b)…");
-    try {
-      const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${cerebrasKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-oss-120b", messages, tools, tool_choice: "auto", stream: false }),
-      });
-      if (response.ok) { console.log("[Chat/NonStream] ✓ Cerebras responded"); return await response.json(); }
-      console.error(`[Chat/NonStream] Cerebras error ${response.status}: ${await response.text()}`);
-    } catch (e) { console.error("[Chat/NonStream] Cerebras exception:", e); }
+  const baseBody: Record<string, unknown> = { messages };
+  if (tools?.length) {
+    baseBody.tools = tools;
+    baseBody.tool_choice = "auto";
   }
 
-  // Ollama cloud
+  // Cerebras
+  if (cerebrasKey) {
+    const r = await fetchStream(
+      "https://api.cerebras.ai/v1/chat/completions",
+      cerebrasKey,
+      { ...baseBody, model: "gpt-oss-120b" },
+      "Cerebras (gpt-oss-120b)"
+    );
+    if (r) return r;
+    console.warn("[Stream] Cerebras failed — trying Ollama");
+  }
+
+  // Ollama — returns NDJSON, needs SSE transform
   if (ollamaKey) {
-    console.log("[Chat/NonStream] Attempting Ollama cloud (gpt-oss:120b-cloud)…");
-    try {
-      const response = await fetch("https://ollama.com/api/chat", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${ollamaKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-oss:120b-cloud", messages, tools, stream: false }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        console.log("[Chat/NonStream] ✓ Ollama responded — normalizing shape");
-        return {
-          choices: [{
-            message: {
-              role: "assistant",
-              content: data.message?.content ?? null,
-              tool_calls: data.message?.tool_calls ?? undefined,
-            },
-            finish_reason: data.done
-              ? (data.message?.tool_calls?.length ? "tool_calls" : "stop")
-              : "stop",
-          }],
-        };
-      }
-      console.error(`[Chat/NonStream] Ollama error ${response.status}: ${await response.text()}`);
-    } catch (e) { console.error("[Chat/NonStream] Ollama exception:", e); }
+    const r = await fetchStream(
+      "https://ollama.com/api/chat",
+      ollamaKey,
+      { ...baseBody, model: "gpt-oss:120b-cloud" },
+      "Ollama (gpt-oss:120b-cloud)"
+    );
+    if (r) return ollamaToSSE(r);
+    console.warn("[Stream] Ollama failed — trying OpenRouter");
   }
 
   // OpenRouter
   if (openRouterKey) {
-    console.log("[Chat/NonStream] Attempting OpenRouter (cerebras/gpt-oss-120b)…");
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${openRouterKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "cerebras/gpt-oss-120b", messages, tools, tool_choice: "auto", stream: false }),
-      });
-      if (response.ok) { console.log("[Chat/NonStream] ✓ OpenRouter responded"); return await response.json(); }
-      console.error(`[Chat/NonStream] OpenRouter error ${response.status}: ${await response.text()}`);
-    } catch (e) { console.error("[Chat/NonStream] OpenRouter exception:", e); }
+    const r = await fetchStream(
+      "https://openrouter.ai/api/v1/chat/completions",
+      openRouterKey,
+      { ...baseBody, model: "cerebras/gpt-oss-120b" },
+      "OpenRouter (cerebras/gpt-oss-120b)"
+    );
+    if (r) return r;
   }
-
-  console.error("[Chat/NonStream] All providers failed");
-  return null;
-}
-
-// ============================================================================
-// Chat providers — streaming (final answer pass)
-// ============================================================================
-
-async function chatCerebrasStream(messages: any[], apiKey: string): Promise<Response | null> {
-  console.log("[Chat/Stream] Attempting Cerebras (gpt-oss-120b)…");
-  try {
-    const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-oss-120b", messages, stream: true }),
-    });
-    if (!response.ok) { console.error(`[Chat/Stream] Cerebras error ${response.status}: ${await response.text()}`); return null; }
-    console.log("[Chat/Stream] ✓ Cerebras streaming");
-    return response;
-  } catch (e) { console.error("[Chat/Stream] Cerebras exception:", e); return null; }
-}
-
-async function chatOllamaStream(messages: any[], apiKey: string): Promise<Response | null> {
-  console.log("[Chat/Stream] Attempting Ollama cloud (gpt-oss:120b-cloud)…");
-  try {
-    const response = await fetch("https://ollama.com/api/chat", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-oss:120b-cloud", messages, stream: true }),
-    });
-    if (!response.ok) { console.error(`[Chat/Stream] Ollama error ${response.status}: ${await response.text()}`); return null; }
-
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("json") && !contentType.includes("octet-stream") && !contentType.includes("event-stream")) {
-      console.error(`[Chat/Stream] Ollama unexpected content-type: "${contentType}"`); return null;
-    }
-
-    console.log("[Chat/Stream] ✓ Ollama streaming — transforming NDJSON → SSE");
-    const reader  = response.body!.getReader();
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
-    let buffer = ""; let chunkCount = 0;
-
-    const stream = new ReadableStream({
-      async pull(controller) {
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            if (buffer.trim()) {
-              try {
-                const parsed = JSON.parse(buffer.trim());
-                const content = parsed.message?.content || "";
-                if (content) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`));
-              } catch { /* ignore */ }
-            }
-            console.log(`[Chat/Stream] Ollama complete — ${chunkCount} chunks`);
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            controller.close(); return;
-          }
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n"); buffer = lines.pop() || "";
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const parsed = JSON.parse(line);
-              const content = parsed.message?.content || "";
-              if (content) { chunkCount++; controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`)); }
-            } catch { /* skip */ }
-          }
-        } catch (error) { console.error("[Chat/Stream] Ollama read error:", error); controller.error(error); }
-      },
-    });
-
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
-  } catch (e) { console.error("[Chat/Stream] Ollama exception:", e); return null; }
-}
-
-async function chatOpenRouterStream(messages: any[], apiKey: string): Promise<Response | null> {
-  console.log("[Chat/Stream] Attempting OpenRouter (cerebras/gpt-oss-120b)…");
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "cerebras/gpt-oss-120b", messages, stream: true }),
-    });
-    if (!response.ok) {
-      if (response.status === 429) { console.error("[Chat/Stream] OpenRouter rate limit (429)"); return new Response(JSON.stringify({ error: "Rate limits exceeded" }), { status: 429 }); }
-      if (response.status === 402) { console.error("[Chat/Stream] OpenRouter payment required (402)"); return new Response(JSON.stringify({ error: "Payment required" }), { status: 402 }); }
-      console.error(`[Chat/Stream] OpenRouter error ${response.status}: ${await response.text()}`); return null;
-    }
-    console.log("[Chat/Stream] ✓ OpenRouter streaming");
-    return response;
-  } catch (e) { console.error("[Chat/Stream] OpenRouter exception:", e); return null; }
-}
-
-async function getStreamingResponse(messages: any[]): Promise<Response> {
-  const cerebrasKey   = Deno.env.get("CEREBRAS_API_KEY");
-  const ollamaKey     = Deno.env.get("OLLAMA_API_KEY");
-  const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
-
-  if (cerebrasKey)   { const r = await chatCerebrasStream(messages, cerebrasKey);    if (r) return r; console.warn("[Chat/Stream] Cerebras failed — trying Ollama"); }
-  if (ollamaKey)     { const r = await chatOllamaStream(messages, ollamaKey);        if (r) return r; console.warn("[Chat/Stream] Ollama failed — trying OpenRouter"); }
-  if (openRouterKey) { const r = await chatOpenRouterStream(messages, openRouterKey); if (r) return r; }
 
   throw new Error("All streaming providers failed");
 }
 
 // ============================================================================
-// Agentic loop
+// Agentic loop — streaming-only
+//
+// We stream every pass. If the model requests tool calls, we accumulate the
+// stream to read the tool call arguments, execute the tools, then stream the
+// final answer. No non-streaming pass needed.
 // ============================================================================
 
-async function runAgenticLoop(messages: any[]): Promise<Response> {
+async function runAgenticLoop(messages: unknown[]): Promise<Response> {
   const tools = [CURRICULUM_SEARCH_TOOL];
   const MAX_TOOL_ROUNDS = 3;
   let workingMessages = [...messages];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    console.log(`[Agent] Round ${round + 1}/${MAX_TOOL_ROUNDS} — non-streaming pass`);
+    console.log(`[Agent] Round ${round + 1}/${MAX_TOOL_ROUNDS}`);
 
-    const completion = await chatNonStreaming(workingMessages, tools);
-    if (!completion) throw new Error("All providers failed during agentic loop");
+    const streamResponse = await getStreamingResponse(workingMessages, tools);
 
-    const choice      = completion.choices?.[0];
-    const message     = choice?.message;
-    const finishReason = choice?.finish_reason;
-
-    console.log(`[Agent] finish_reason: "${finishReason}"`);
-
-    if (finishReason !== "tool_calls" || !message?.tool_calls?.length) {
-      console.log("[Agent] No tool calls — proceeding to streaming answer");
-
-      if (message?.content) {
-        console.log("[Agent] Wrapping non-stream answer as SSE");
-        const encoder = new TextEncoder();
-        const content = message.content;
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`));
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            controller.close();
-          },
-        });
-        return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
-      }
-
-      return getStreamingResponse(workingMessages);
+    // Propagate hard errors from providers immediately
+    const contentType = streamResponse.headers.get("Content-Type") ?? "";
+    if (!contentType.includes("event-stream") && !contentType.includes("octet-stream")) {
+      console.error(`[Agent] Provider returned non-stream response — propagating`);
+      return streamResponse;
     }
 
-    console.log(`[Agent] Model requested ${message.tool_calls.length} tool call(s)`);
-    workingMessages.push({ role: "assistant", content: message.content ?? null, tool_calls: message.tool_calls });
+    // Accumulate the stream to check for tool calls
+    const { content, toolCalls } = await accumulateSSE(streamResponse);
 
-    for (const toolCall of message.tool_calls) {
-      const toolName = toolCall.function?.name;
+    if (!toolCalls || toolCalls.length === 0) {
+      // No tool calls — sanitize the content and stream it to the client
+      console.log(`[Agent] No tool calls on round ${round + 1} — streaming final answer`);
+      const sanitized = sanitizeMarkdown(content);
+      const encoder   = new TextEncoder();
+
+      const finalStream = new ReadableStream({
+        start(controller) {
+          // Stream in chunks so the client sees progressive rendering
+          const CHUNK_SIZE = 40;
+          for (let i = 0; i < sanitized.length; i += CHUNK_SIZE) {
+            const chunk = sanitized.slice(i, i + CHUNK_SIZE);
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`)
+            );
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+
+      return new Response(finalStream, { headers: { "Content-Type": "text/event-stream" } });
+    }
+
+    // Tool calls found — execute them and continue the loop
+    console.log(`[Agent] ${toolCalls.length} tool call(s) on round ${round + 1}`);
+
+    workingMessages.push({
+      role: "assistant",
+      content: content || null,
+      tool_calls: toolCalls.map((tc, i) => ({
+        id: tc.id || `tool_${round}_${i}`,
+        type: "function",
+        function: tc.function,
+      })),
+    });
+
+    for (const tc of toolCalls) {
+      const toolName = tc.function.name;
       const toolArgs = (() => {
-        try { return JSON.parse(toolCall.function?.arguments ?? "{}"); }
+        try { return JSON.parse(tc.function.arguments ?? "{}"); }
         catch { console.error(`[Agent] Failed to parse args for "${toolName}"`); return {}; }
       })();
+
       const toolResult = await executeTool(toolName, toolArgs);
-      workingMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
+      workingMessages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: toolResult,
+      });
     }
   }
 
-  console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) — forcing final stream`);
+  // Exceeded max rounds — stream the final answer without tools
+  console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) — streaming final answer without tools`);
   return getStreamingResponse(workingMessages);
 }
 
@@ -558,22 +635,40 @@ async function runAgenticLoop(messages: any[]): Promise<Response> {
 // Rate limiting
 // ============================================================================
 
-async function enforceRateLimit(userId: string, supabaseAdmin: any): Promise<boolean> {
-  const now = new Date(); const windowMs = 60 * 1000; const maxRequests = 20;
+async function enforceRateLimit(userId: string, supabaseAdmin: ReturnType<typeof createClient>): Promise<boolean> {
+  const now        = new Date();
+  const windowMs   = 60 * 1000;
+  const maxRequests = 20;
 
-  const { data: rateLimit } = await supabaseAdmin.from("rate_limits").select("*").eq("user_id", userId).single();
+  const { data: rateLimit } = await supabaseAdmin
+    .from("rate_limits")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
 
   if (rateLimit) {
-    const windowStart = new Date(rateLimit.window_start);
+    const windowStart   = new Date(rateLimit.window_start);
     const isWithinWindow = now.getTime() - windowStart.getTime() < windowMs;
+
     if (isWithinWindow) {
-      if (rateLimit.request_count >= maxRequests) { console.warn(`[RateLimit] User ${userId} exceeded ${maxRequests} req/min`); return false; }
-      await supabaseAdmin.from("rate_limits").update({ request_count: rateLimit.request_count + 1 }).eq("user_id", userId);
+      if (rateLimit.request_count >= maxRequests) {
+        console.warn(`[RateLimit] User ${userId} exceeded ${maxRequests} req/min`);
+        return false;
+      }
+      await supabaseAdmin
+        .from("rate_limits")
+        .update({ request_count: rateLimit.request_count + 1 })
+        .eq("user_id", userId);
     } else {
-      await supabaseAdmin.from("rate_limits").update({ request_count: 1, window_start: now.toISOString() }).eq("user_id", userId);
+      await supabaseAdmin
+        .from("rate_limits")
+        .update({ request_count: 1, window_start: now.toISOString() })
+        .eq("user_id", userId);
     }
   } else {
-    await supabaseAdmin.from("rate_limits").insert({ user_id: userId, request_count: 1, window_start: now.toISOString() });
+    await supabaseAdmin
+      .from("rate_limits")
+      .insert({ user_id: userId, request_count: 1, window_start: now.toISOString() });
   }
 
   return true;
@@ -590,9 +685,9 @@ serve(async (req) => {
   console.log(`[Request] ${req.method} ${req.url}`);
 
   try {
-    const QDRANT_URL               = Deno.env.get("QDRANT_URL");
-    const QDRANT_API_KEY           = Deno.env.get("QDRANT_API_KEY");
-    const SUPABASE_URL             = Deno.env.get("SUPABASE_URL");
+    const QDRANT_URL                = Deno.env.get("QDRANT_URL");
+    const QDRANT_API_KEY            = Deno.env.get("QDRANT_API_KEY");
+    const SUPABASE_URL              = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!QDRANT_URL)                throw new Error("QDRANT_URL not configured");
@@ -619,18 +714,26 @@ serve(async (req) => {
       const allowed = await enforceRateLimit(userId, supabaseAdmin);
       if (!allowed) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
     // Parse body
     const { messages, userRole } = await req.json();
-    const lastUserMessage = [...messages].filter((m: any) => m.role === "user").pop()?.content || "";
-    console.log(`[Request] Role: ${userRole || "individual"} | History: ${messages.length} msgs | Query: "${lastUserMessage.slice(0, 100)}${lastUserMessage.length > 100 ? "…" : ""}"`);
+    const lastUserMessage = [...messages]
+      .filter((m: { role: string }) => m.role === "user")
+      .pop()?.content || "";
+
+    console.log(
+      `[Request] Role: ${userRole || "individual"} | ` +
+      `History: ${messages.length} msgs | ` +
+      `Query: "${lastUserMessage.slice(0, 100)}${lastUserMessage.length > 100 ? "…" : ""}"`
+    );
 
     // Step 1: Embedding
-    const embedStart = Date.now();
+    const embedStart  = Date.now();
     const queryVector = await getEmbedding(lastUserMessage);
     console.log(`[Embedding] Completed in ${Date.now() - embedStart}ms`);
 
@@ -651,7 +754,10 @@ serve(async (req) => {
         const qdrantData = await qdrantResponse.json();
         const results: QdrantResult[] = qdrantData.result || [];
         const scores = results.map(r => r.score.toFixed(3)).join(", ");
-        console.log(`[RAG] ✓ ${results.length} raw chunks in ${Date.now() - qdrantStart}ms | scores: [${scores}]`);
+        console.log(
+          `[RAG] ✓ ${results.length} raw chunks in ${Date.now() - qdrantStart}ms | ` +
+          `scores: [${scores}]`
+        );
         alignment = parseCurriculumAlignment(results);
         const totalChars = alignment.syllabusChunks.join("").length;
         console.log(`[RAG/Align] Context size: ${totalChars} chars across ${alignment.syllabusChunks.length} chunks`);
@@ -667,30 +773,25 @@ serve(async (req) => {
     console.log(`[Prompt] Built — ${systemPrompt.length} chars`);
 
     // Step 4: History strategy
-    // School: current message only (no persistent student, avoid context bloat)
-    // Student: full history (continuity across the session)
     const historyMessages = userRole === "school"
       ? [messages[messages.length - 1]]
       : messages;
 
     const fullMessages = [{ role: "system", content: systemPrompt }, ...historyMessages];
-    console.log(`[Agent] Starting — ${fullMessages.length} messages (${userRole === "school" ? "school/current-only" : "student/full-history"})`);
+    console.log(
+      `[Agent] Starting — ${fullMessages.length} messages ` +
+      `(${userRole === "school" ? "school/current-only" : "student/full-history"})`
+    );
 
-    // Step 5: Agentic loop
+    // Step 5: Agentic loop (streaming-only)
     const agentStart = Date.now();
     const aiResponse = await runAgenticLoop(fullMessages);
     console.log(`[Agent] Complete in ${Date.now() - agentStart}ms | Total: ${Date.now() - requestStart}ms`);
 
-    // Propagate provider errors
-    const contentType = aiResponse.headers.get("Content-Type") || "";
-    if (contentType.includes("application/json")) {
-      const body = await aiResponse.text();
-      console.error(`[Response] Provider error: ${body}`);
-      return new Response(body, { status: aiResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    console.log(`[Response] Streaming to client`);
-    return new Response(aiResponse.body, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+    return new Response(aiResponse.body, {
+      status: aiResponse.status,
+      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+    });
 
   } catch (error) {
     console.error(`[Error] Unhandled after ${Date.now() - requestStart}ms:`, error);
