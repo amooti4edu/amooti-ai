@@ -5,7 +5,7 @@ import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import type { Message } from "@/types/chat";
 import { RefObject } from "react";
-import { Bot, User } from "lucide-react";
+import { Bot } from "lucide-react";
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -14,6 +14,7 @@ interface ChatMessagesProps {
 }
 
 export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesProps) {
+  // ── Empty state ────────────────────────────────────────────────────────────
   if (messages.length === 0 && !isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
@@ -29,60 +30,78 @@ export function ChatMessages({ messages, isLoading, bottomRef }: ChatMessagesPro
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-4">
-      {messages.map((msg, i) => (
-        <div
-          key={i}
-          className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
-        >
-          {msg.role === "assistant" && (
-            <div className="mt-1 flex-shrink-0 rounded-full bg-accent/20 p-1.5">
-              <Bot size={16} className="text-accent" />
-            </div>
-          )}
-
-          <div
-            className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-              msg.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"
-            }`}
-          >
-            {msg.role === "assistant" ? (
-              msg.content === "" ? (
-                // Empty assistant bubble while first tokens arrive — show cursor
-                <span className="inline-block w-2 h-4 bg-current opacity-70 animate-pulse" />
-              ) : (
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
-              )
-            ) : (
+    <div className="flex-1 overflow-y-auto py-6 space-y-0">
+      {messages.map((msg, i) =>
+        msg.role === "user" ? (
+          // ── User message — right-aligned pill ───────────────────────────────
+          <div key={i} className="flex justify-end px-4 md:px-8 py-2 animate-fade-in">
+            <div className="max-w-[75%] md:max-w-[55%] rounded-2xl bg-accent px-4 py-2.5 text-sm leading-relaxed text-accent-foreground shadow-sm">
               <span className="whitespace-pre-wrap">{msg.content}</span>
+            </div>
+          </div>
+        ) : (
+          // ── Assistant message — full width, written on the page ─────────────
+          <div
+            key={i}
+            className="w-full px-4 md:px-8 py-5 animate-fade-in"
+          >
+            {/* Subtle top rule to visually open a new "page section" */}
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex-shrink-0 rounded-full bg-accent/15 p-1.5">
+                <Bot size={14} className="text-accent" />
+              </div>
+              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Amooti
+              </span>
+            </div>
+
+            {msg.content === "" ? (
+              // Cursor pulse while first tokens arrive
+              <div className="flex items-center gap-1 pl-0.5">
+                <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" />
+                <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
+                <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
+              </div>
+            ) : (
+              <div className="prose prose-sm max-w-none text-foreground
+                prose-headings:font-serif prose-headings:text-foreground
+                prose-p:leading-relaxed prose-p:text-foreground/90
+                prose-strong:text-foreground prose-strong:font-semibold
+                prose-code:text-accent prose-code:bg-accent/10 prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:text-xs
+                prose-pre:bg-muted prose-pre:border prose-pre:border-border
+                prose-blockquote:border-accent prose-blockquote:text-muted-foreground
+                prose-ul:text-foreground/90 prose-ol:text-foreground/90
+                prose-li:leading-relaxed
+                prose-table:text-sm prose-th:text-foreground prose-td:text-foreground/90
+                prose-hr:border-border
+              ">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
             )}
           </div>
+        )
+      )}
 
-          {msg.role === "user" && (
-            <div className="mt-1 flex-shrink-0 rounded-full bg-primary/20 p-1.5">
-              <User size={16} className="text-primary" />
-            </div>
-          )}
-        </div>
-      ))}
-
-      {/* Typing dots — only while loading AND no assistant bubble yet */}
+      {/* Typing dots — shown only while waiting for first token */}
       {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user") && (
-        <div className="flex gap-3 justify-start animate-fade-in">
-          <div className="mt-1 flex-shrink-0 rounded-full bg-accent/20 p-1.5">
-            <Bot size={16} className="text-accent" />
+        <div className="w-full px-4 md:px-8 py-5 animate-fade-in">
+          <div className="mb-4 flex items-center gap-2.5">
+            <div className="flex-shrink-0 rounded-full bg-accent/15 p-1.5">
+              <Bot size={14} className="text-accent" />
+            </div>
+            <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Amooti
+            </span>
           </div>
-          <div className="chat-bubble-assistant rounded-2xl px-4 py-3 flex gap-1 items-center">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-dot" />
-            <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
-            <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
+          <div className="flex items-center gap-1.5 pl-0.5">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" />
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
           </div>
         </div>
       )}
