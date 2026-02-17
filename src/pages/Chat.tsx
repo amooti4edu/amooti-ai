@@ -101,9 +101,21 @@ export default function Chat() {
         });
       }
 
-      // Call edge function
+      // Call edge function with full messages array
+      const allMessages = [...messages, userMessage].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      // Get user role from profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .single();
+
       const resp = await supabase.functions.invoke("rag-agent", {
-        body: { message: content, conversationId: convId },
+        body: { messages: allMessages, userRole: profile?.role || "student" },
       });
 
       // Handle streaming or plain response
