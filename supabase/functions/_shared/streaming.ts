@@ -156,25 +156,20 @@ function ollamaToSSE(response: Response): Response {
               if (content) {
                 controller.enqueue(
                   encoder.encode(
-                    `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}
-
-`
+                    `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`
                   )
                 );
               }
             } catch { /* ignore malformed trailing data */ }
           }
           console.log(`[Stream] Ollama Cloud complete — ${chunks} chunks`);
-          controller.enqueue(encoder.encode("data: [DONE]
-
-"));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
           return;
         }
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("
-");
+        const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
 
         for (const line of lines) {
@@ -188,9 +183,7 @@ function ollamaToSSE(response: Response): Response {
               chunks++;
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}
-
-`
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`
                 )
               );
             }
