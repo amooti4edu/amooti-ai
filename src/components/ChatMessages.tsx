@@ -4,6 +4,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import type { Message } from "@/types/chat";
+import type { ReactNode } from "react";
 import { RefObject } from "react";
 import { Bot } from "lucide-react";
 
@@ -13,6 +14,99 @@ interface ChatMessagesProps {
   loadingPhrase: string;
   bottomRef: RefObject<HTMLDivElement>;
 }
+
+// ── Helper: Extract video ID from URLs ──────────────────────────────────────
+const getYouTubeId = (url: string): string | null => {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^\s&]+)/,
+    /youtube\.com\/embed\/([^\s&]+)/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+};
+
+const getVimeoId = (url: string): string | null => {
+  const match = url.match(/vimeo\.com\/(\d+)/);
+  return match?.[1] || null;
+};
+
+// ── Custom image component ─────────────────────────────────────────────────
+const CustomImage = ({
+  src,
+  alt,
+  ...props
+}: React.ImgHTMLAttributes<HTMLImageElement>) => {
+  if (!src) return null;
+  return (
+    <div className="my-4 flex justify-center">
+      <img
+        src={src}
+        alt={alt || "Image"}
+        className="rounded-lg max-w-full h-auto shadow-md"
+        {...props}
+      />
+    </div>
+  );
+};
+
+// ── Custom link component (for video embeds) ───────────────────────────────
+const CustomLink = ({
+  href,
+  children,
+  ...props
+}: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+  if (!href) return <a {...props}>{children}</a>;
+
+  const youtubeId = getYouTubeId(href);
+  if (youtubeId) {
+    return (
+      <div className="my-4 flex justify-center">
+        <iframe
+          width="100%"
+          height="315"
+          src={`https://www.youtube.com/embed/${youtubeId}`}
+          title="YouTube video"
+          frameBorder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          className="rounded-lg max-w-2xl"
+        />
+      </div>
+    );
+  }
+
+  const vimeoId = getVimeoId(href);
+  if (vimeoId) {
+    return (
+      <div className="my-4 flex justify-center">
+        <iframe
+          src={`https://player.vimeo.com/video/${vimeoId}`}
+          width="100%"
+          height="315"
+          frameBorder="0"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+          className="rounded-lg max-w-2xl"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-accent hover:underline"
+      {...props}
+    >
+      {children}
+    </a>
+  );
+};
 
 export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: ChatMessagesProps) {
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -73,6 +167,10 @@ export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: 
                 prose-hr:border-border
               ">
                 <ReactMarkdown
+                  components={{
+                    img: CustomImage as any,
+                    a: CustomLink as any,
+                  }}
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[rehypeKatex, rehypeHighlight]}
                 >

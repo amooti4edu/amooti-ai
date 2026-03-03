@@ -7,6 +7,11 @@ import { AuthProvider } from "@/lib/auth";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
+import About from "./pages/About";
+import Pricing from "./pages/Pricing";
+import Subjects from "./pages/Subjects";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +25,11 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/subjects" element={<Subjects />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/login/:role" element={<Login />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="*" element={<NotFound />} />

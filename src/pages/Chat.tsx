@@ -57,6 +57,8 @@ export default function Chat() {
   const [dailyUsed, setDailyUsed]   = useState(0);
   const [apiError, setApiError]     = useState<ApiError | null>(null);
   const [teacherDoc, setTeacherDoc] = useState<TeacherDoc | null>(null);
+  const [subject, setSubject]       = useState<string | undefined>(undefined);
+  const [userClass, setUserClass]   = useState<string | undefined>(undefined);
 
   const bottomRef      = useRef<HTMLDivElement>(null!);
   const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -95,6 +97,11 @@ export default function Chat() {
           // tier column may not exist yet (pending migration) — default to free
           const tier = (data as any)?.tier as Tier | undefined;
           setUserTier(tier ?? "free");
+          // Also fetch subject and class if available
+          const sub = (data as any)?.subject as string | undefined;
+          const cls = (data as any)?.class as string | undefined;
+          if (sub) setSubject(sub);
+          if (cls) setUserClass(cls);
         }
       });
   }, [session]);
@@ -246,6 +253,8 @@ export default function Chat() {
       },
       body: JSON.stringify({
         messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...(subject ? { subject } : {}),
+        ...(userClass ? { class: userClass } : {}),
       }),
       signal: AbortSignal.timeout(60_000),
     });
@@ -305,6 +314,8 @@ export default function Chat() {
         messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
         mode,
         ...(difficulty && mode === "quiz" ? { difficulty } : {}),
+        ...(subject ? { subject } : {}),
+        ...(userClass ? { class: userClass } : {}),
       }),
     });
 
