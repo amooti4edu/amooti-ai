@@ -438,23 +438,18 @@ export default function Chat() {
         )}
 
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto">
+        {teacherDoc && !isLoading ? (
+          <div className="flex-1 overflow-y-auto py-6 px-4">
+            <TeacherResponse doc={teacherDoc} />
+          </div>
+        ) : (
           <ChatMessages
             messages={messages}
             isLoading={isLoading}
             loadingPhrase={loadingPhrase}
             bottomRef={bottomRef}
           />
-
-          {/* Teacher document card */}
-          {teacherDoc && !isLoading && (
-            <div className="px-4 py-6">
-              <TeacherResponse doc={teacherDoc} />
-            </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
+        )}
 
         {/* Controls bar: mode selector + difficulty */}
         <div className="flex flex-wrap items-center gap-3 border-t px-4 py-2 bg-background">
