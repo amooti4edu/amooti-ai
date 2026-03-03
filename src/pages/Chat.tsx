@@ -1,19 +1,29 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessages } from "@/components/ChatMessages";
 import { ChatInput } from "@/components/ChatInput";
 import { ChatSidebar } from "@/components/ChatSidebar";
-import type { Message } from "@/types/chat";
+import { ModeSelector } from "@/components/ModeSelector";
+import { DifficultySelector } from "@/components/DifficultySelector";
+import { DailyLimitBadge } from "@/components/DailyLimitBadge";
+import { TeacherResponse } from "@/components/TeacherResponse";
+import type {
+  Message,
+  ChatMode,
+  Tier,
+  Difficulty,
+  TeacherDoc,
+  ApiError,
+} from "@/types/chat";
 
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github.css";
 
 const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
 
-// Phrases that cycle while waiting for the first token
 const THINKING_PHRASES = [
   "Thinking…",
   "Checking the syllabus…",
@@ -21,27 +31,47 @@ const THINKING_PHRASES = [
   "Almost there…",
 ];
 
+const TEACHER_PHRASES = [
+  "Generating your document…",
+  "Building lesson content…",
+  "Formatting materials…",
+  "Almost ready…",
+];
+
 export default function Chat() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
 
-  const [messages, setMessages]                     = useState<Message[]>([]);
-  const [isLoading, setIsLoading]                   = useState(false);
-  const [loadingPhrase, setLoadingPhrase]           = useState(THINKING_PHRASES[0]);
-  const [sidebarOpen, setSidebarOpen]               = useState(false);
-  const [conversations, setConversations]           = useState<any[]>([]);
+  // Chat state
+  const [messages, setMessages]                       = useState<Message[]>([]);
+  const [isLoading, setIsLoading]                     = useState(false);
+  const [loadingPhrase, setLoadingPhrase]             = useState(THINKING_PHRASES[0]);
+  const [sidebarOpen, setSidebarOpen]                 = useState(false);
+  const [conversations, setConversations]             = useState<any[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const bottomRef     = useRef<HTMLDivElement>(null!);
+
+  // New state for modes & tiers
+  const [mode, setMode]             = useState<ChatMode>("query");
+  const [difficulty, setDifficulty] = useState<Difficulty | undefined>(undefined);
+  const [userTier, setUserTier]     = useState<Tier>("free");
+  const [dailyUsed, setDailyUsed]   = useState(0);
+  const [apiError, setApiError]     = useState<ApiError | null>(null);
+  const [teacherDoc, setTeacherDoc] = useState<TeacherDoc | null>(null);
+
+  const bottomRef      = useRef<HTMLDivElement>(null!);
   const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── Auth redirect ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!loading && !session) navigate("/");
   }, [session, loading, navigate]);
 
+  // ── Auto-scroll ────────────────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, teacherDoc]);
 
+  // ── Fetch conversations ────────────────────────────────────────────────────
   useEffect(() => {
     if (!session) return;
     supabase
@@ -49,13 +79,30 @@ export default function Chat() {
       .select("*")
       .eq("user_id", session.user.id)
       .order("updated_at", { ascending: false })
+      .then(({ data }) => { if (data) setConversations(data); });
+  }, [session]);
+
+  // ── Fetch user tier from profile ───────────────────────────────────────────
+  useEffect(() => {
+    if (!session) return;
+    supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .single()
       .then(({ data }) => {
-        if (data) setConversations(data);
+        if (data) {
+          // tier column may not exist yet (pending migration) — default to free
+          const tier = (data as any)?.tier as Tier | undefined;
+          setUserTier(tier ?? "free");
+        }
       });
   }, [session]);
 
+  // ── Load messages for active conversation ──────────────────────────────────
   useEffect(() => {
     if (!activeConversationId) return;
+    setTeacherDoc(null);
     supabase
       .from("messages")
       .select("*")
@@ -70,13 +117,13 @@ export default function Chat() {
       });
   }, [activeConversationId]);
 
-  // Start / stop the cycling loading phrase
-  const startLoadingPhrases = () => {
-    setLoadingPhrase(THINKING_PHRASES[0]);
+  // ── Loading phrase cycler ──────────────────────────────────────────────────
+  const startLoadingPhrases = (phrases: string[]) => {
+    setLoadingPhrase(phrases[0]);
     let idx = 0;
     phraseTimerRef.current = setInterval(() => {
-      idx = (idx + 1) % THINKING_PHRASES.length;
-      setLoadingPhrase(THINKING_PHRASES[idx]);
+      idx = (idx + 1) % phrases.length;
+      setLoadingPhrase(phrases[idx]);
     }, 1800);
   };
 
@@ -87,34 +134,51 @@ export default function Chat() {
     }
   };
 
+  // ── Sidebar handlers ───────────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveConversationId(null);
     setMessages([]);
+    setTeacherDoc(null);
+    setApiError(null);
     setSidebarOpen(false);
   };
 
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
+    setApiError(null);
     setSidebarOpen(false);
   };
 
+  // ── Error parser ───────────────────────────────────────────────────────────
+  const parseApiError = async (resp: Response): Promise<ApiError> => {
+    let message = "Something went wrong. Please try again.";
+    try {
+      const json = await resp.json();
+      message = json.error ?? message;
+    } catch { /* use default */ }
+
+    if (resp.status === 429) return { type: "rate_limit", message };
+    if (resp.status === 403) return { type: "forbidden", message };
+    if (resp.status === 401) return { type: "auth", message };
+    return { type: "server", message };
+  };
+
+  // ── Send handler ───────────────────────────────────────────────────────────
   const handleSend = async (content: string) => {
     if (!session || isLoading) return;
+    setApiError(null);
+    setTeacherDoc(null);
 
     const userMessage: Message = { role: "user", content };
-
-    // Commit the user message immediately and never touch it again.
-    // allMessages is the snapshot we send to the API — we do NOT derive
-    // it from state later, so React batching can never eat it.
     const allMessages: Message[] = [...messages, userMessage];
     setMessages(allMessages);
     setIsLoading(true);
-    startLoadingPhrases();
+    startLoadingPhrases(mode === "teacher" ? TEACHER_PHRASES : THINKING_PHRASES);
 
     let convId = activeConversationId;
 
     try {
-      // ── Persistence ───────────────────────────────────────────────────────
+      // ── Persist conversation ──────────────────────────────────────────────
       if (!convId) {
         const { data } = await supabase
           .from("conversations")
@@ -136,132 +200,20 @@ export default function Chat() {
         });
       }
 
-      // ── Profile + token ───────────────────────────────────────────────────
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .single();
-
-      const userRole = profile?.role || "student";
-
+      // ── Auth token ────────────────────────────────────────────────────────
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("No access token — user may be logged out");
+      if (!accessToken) throw new Error("No access token");
 
-      // ── Fetch stream ──────────────────────────────────────────────────────
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/rag-agent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
-          userRole,
-        }),
-      });
-
-      // ── Provider-level errors ─────────────────────────────────────────────
-      if (resp.status === 429) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "You're sending messages too quickly. Please wait a moment and try again." },
-        ]);
-        return;
-      }
-      if (resp.status === 402) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "AI credits are temporarily exhausted. Please try again shortly." },
-        ]);
-        return;
-      }
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error("Edge function error:", resp.status, errText);
-        throw new Error(`Edge function returned ${resp.status}`);
-      }
-      if (!resp.body) throw new Error("Response has no body");
-
-      // ── Read the SSE stream ───────────────────────────────────────────────
-      const reader   = resp.body.getReader();
-      const decoder  = new TextDecoder();
-      let assistantContent    = "";
-      let textBuffer          = "";
-      let assistantBubbleAdded = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line   = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const delta  = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              // Stop the loading animation the moment the first token arrives
-              if (!assistantBubbleAdded) {
-                assistantBubbleAdded = true;
-                stopLoadingPhrases();
-                // Append the assistant bubble — user message is already in
-                // state and will not be affected
-                setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-              }
-
-              assistantContent += delta;
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: assistantContent };
-                return updated;
-              });
-            }
-          } catch {
-            // Partial JSON — requeue and wait for more data
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
-        }
+      // ── Branch: Teacher mode vs Chat mode ─────────────────────────────────
+      if (mode === "teacher") {
+        await handleTeacherRequest(allMessages, accessToken, convId);
+      } else {
+        await handleChatRequest(allMessages, accessToken, convId, content);
       }
 
-      // ── Fallback: nothing streamed ────────────────────────────────────────
-      if (!assistantContent) {
-        console.warn("Stream ended with no content");
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "I didn't receive a response. Please try again." },
-        ]);
-        return;
-      }
+      setDailyUsed((prev) => prev + 1);
 
-      // ── Persist assistant message ─────────────────────────────────────────
-      if (convId) {
-        await supabase.from("messages").insert({
-          conversation_id: convId,
-          role: "assistant",
-          content: assistantContent,
-        });
-
-        supabase
-          .from("conversations")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("updated_at", { ascending: false })
-          .then(({ data }) => { if (data) setConversations(data); });
-      }
     } catch (err: any) {
       console.error("Chat error:", err);
       setMessages((prev) => {
@@ -280,6 +232,165 @@ export default function Chat() {
     }
   };
 
+  // ── Teacher mode handler (non-streaming JSON) ──────────────────────────────
+  const handleTeacherRequest = async (
+    allMessages: Message[],
+    accessToken: string,
+    convId: string | null,
+  ) => {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/teacher`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!resp.ok) {
+      const error = await parseApiError(resp);
+      setApiError(error);
+      if (error.type === "auth") navigate("/");
+      return;
+    }
+
+    const json = await resp.json();
+    stopLoadingPhrases();
+
+    setTeacherDoc({
+      content: json.content,
+      downloadUrl: json.download_url,
+      expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+    });
+
+    // Add the markdown content as an assistant message
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: json.content },
+    ]);
+
+    // Persist
+    if (convId) {
+      await supabase.from("messages").insert({
+        conversation_id: convId,
+        role: "assistant",
+        content: json.content,
+      });
+      supabase
+        .from("conversations")
+        .select("*")
+        .eq("user_id", session!.user.id)
+        .order("updated_at", { ascending: false })
+        .then(({ data }) => { if (data) setConversations(data); });
+    }
+  };
+
+  // ── Chat mode handler (SSE streaming) ──────────────────────────────────────
+  const handleChatRequest = async (
+    allMessages: Message[],
+    accessToken: string,
+    convId: string | null,
+    _content: string,
+  ) => {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+        mode,
+        ...(difficulty && mode === "quiz" ? { difficulty } : {}),
+      }),
+    });
+
+    if (!resp.ok) {
+      const error = await parseApiError(resp);
+      setApiError(error);
+      if (error.type === "auth") navigate("/");
+      return;
+    }
+
+    if (!resp.body) throw new Error("Response has no body");
+
+    // ── Read SSE stream ─────────────────────────────────────────────────────
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let assistantContent = "";
+    let textBuffer = "";
+    let assistantBubbleAdded = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      textBuffer += decoder.decode(value, { stream: true });
+
+      let newlineIndex: number;
+      while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+        let line = textBuffer.slice(0, newlineIndex);
+        textBuffer = textBuffer.slice(newlineIndex + 1);
+
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (line.startsWith(":") || line.trim() === "") continue;
+        if (!line.startsWith("data: ")) continue;
+
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === "[DONE]") break;
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) {
+            if (!assistantBubbleAdded) {
+              assistantBubbleAdded = true;
+              stopLoadingPhrases();
+              setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+            }
+
+            assistantContent += delta;
+            setMessages((prev) => {
+              const updated = [...prev];
+              updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+              return updated;
+            });
+          }
+        } catch {
+          textBuffer = line + "\n" + textBuffer;
+          break;
+        }
+      }
+    }
+
+    // ── Fallback ────────────────────────────────────────────────────────────
+    if (!assistantContent) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "I didn't receive a response. Please try again." },
+      ]);
+      return;
+    }
+
+    // ── Persist ─────────────────────────────────────────────────────────────
+    if (convId) {
+      await supabase.from("messages").insert({
+        conversation_id: convId,
+        role: "assistant",
+        content: assistantContent,
+      });
+      supabase
+        .from("conversations")
+        .select("*")
+        .eq("user_id", session!.user.id)
+        .order("updated_at", { ascending: false })
+        .then(({ data }) => { if (data) setConversations(data); });
+    }
+  };
+
   if (loading) return null;
 
   return (
@@ -292,7 +403,9 @@ export default function Chat() {
         onSelect={handleSelectConversation}
         onNewChat={handleNewChat}
       />
+
       <div className="flex flex-1 flex-col min-w-0">
+        {/* Header */}
         <header className="flex items-center gap-3 border-b px-4 py-3">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -301,14 +414,53 @@ export default function Chat() {
             <Menu size={20} />
           </button>
           <h1 className="font-serif text-lg font-semibold text-foreground">Amooti</h1>
+          <div className="ml-auto">
+            <DailyLimitBadge tier={userTier} used={dailyUsed} />
+          </div>
         </header>
 
-        <ChatMessages
-          messages={messages}
-          isLoading={isLoading}
-          loadingPhrase={loadingPhrase}
-          bottomRef={bottomRef}
-        />
+        {/* API error banner */}
+        {apiError && (
+          <div
+            className={`flex items-center justify-between px-4 py-2 text-sm ${
+              apiError.type === "rate_limit"
+                ? "bg-destructive/10 text-destructive"
+                : apiError.type === "forbidden"
+                ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+                : "bg-destructive/10 text-destructive"
+            }`}
+          >
+            <span>{apiError.message}</span>
+            <button onClick={() => setApiError(null)} className="p-1 hover:bg-background/50 rounded">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Messages area */}
+        {teacherDoc && !isLoading ? (
+          <div className="flex-1 overflow-y-auto py-6 px-4">
+            <TeacherResponse doc={teacherDoc} />
+          </div>
+        ) : (
+          <ChatMessages
+            messages={messages}
+            isLoading={isLoading}
+            loadingPhrase={loadingPhrase}
+            bottomRef={bottomRef}
+          />
+        )}
+
+        {/* Controls bar: mode selector + difficulty */}
+        <div className="flex flex-wrap items-center gap-3 border-t px-4 py-2 bg-background">
+          <ModeSelector mode={mode} onModeChange={setMode} tier={userTier} />
+          {mode === "quiz" && (
+            <DifficultySelector
+              difficulty={difficulty}
+              onDifficultyChange={setDifficulty}
+            />
+          )}
+        </div>
 
         <ChatInput onSend={handleSend} disabled={isLoading} />
       </div>
