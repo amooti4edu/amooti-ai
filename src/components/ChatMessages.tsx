@@ -168,8 +168,8 @@ export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: 
               ">
                 <ReactMarkdown
                   components={{
-                    img: CustomImage as any,
-                    a: CustomLink as any,
+                    img: CustomImage,
+                    a: CustomLink,
                   }}
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[rehypeKatex, rehypeHighlight]}
