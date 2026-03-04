@@ -574,27 +574,20 @@ export default function Chat() {
         }
       }
 
-      // Update quiz session with results and mark as submitted
+      // Parse grading response into structured results
       setQuizSession((prev) => {
         if (!prev) return prev;
+        const results = parseGradingResponse(
+          gradingContent,
+          prev.questionSet,
+          prev.studentAnswers
+        );
         return {
           ...prev,
           isSubmitted: true,
-          results: {
-            totalQuestions: prev.questionSet.length,
-            correctAnswers: prev.studentAnswers.length, // Will be updated by grading
-            score: 0, // Will be calculated from grading response
-            explanation: gradingContent,
-            corrections: [],
-          },
+          results,
         };
       });
-
-      // Add grading response to messages
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: gradingContent },
-      ]);
 
       // Persist conversation
       if (activeConversationId) {
