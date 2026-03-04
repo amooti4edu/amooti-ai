@@ -198,15 +198,15 @@ const About = () => {
 
         {/* Hero Header */}
         <header className="px-6 pt-14 pb-8 md:px-12 lg:px-20" style={{ maxWidth: '72rem', margin: '0 auto' }}>
-          <p className="kicker mb-4">Domus Dei Tech · Est. 2026</p>
+          <p className="kicker mb-4">Domus Dei Tech</p>
           <hr className="rule-thick mb-6" />
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
             <h1 className="display-font" style={{ fontSize: 'clamp(3rem, 8vw, 6rem)', fontWeight: 700, lineHeight: 1.0, letterSpacing: '-0.01em', color: '#1a1814' }}>
-              About<br />Amooti
+              About Amooti
             </h1>
             <div style={{ maxWidth: '22rem' }}>
               <p className="body-text" style={{ fontSize: '1rem', color: '#6b5e48', fontStyle: 'italic' }}>
-                Artificial Intelligence Mentor Optimised for Ongoing Tutelage and Innovation
+                Your AI study companion
               </p>
             </div>
           </div>
