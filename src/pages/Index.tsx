@@ -126,7 +126,7 @@ const Index = () => {
           className="text-hero mt-6 max-w-xl text-base md:text-lg opacity-80 animate-fade-in"
           style={{ animationDelay: "0.2s" }}
         >
-          Ask questions, explore your curriculum, and learn smarter with
+          Ask questions, Quiz yourself, and learn smarter with
           AI-powered educational assistance.
         </p>
         <div className="mt-10 animate-fade-in" style={{ animationDelay: "0.4s" }}>
@@ -144,10 +144,10 @@ const Index = () => {
         <div className="carousel-fade-left" />
         <div className="carousel-fade-right" />
 
-        <div className="carousel-label">Subjects we cover</div>
+        <div className="carousel-label">Subjects</div>
         <SubjectRow items={SUBJECTS} direction="left" />
 
-        <div className="carousel-label mt-2">Schools we support</div>
+        <div className="carousel-label mt-2">Our Schools</div>
         <SchoolRow items={SCHOOLS} direction="right" />
       </div>
 
