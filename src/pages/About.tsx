@@ -114,7 +114,7 @@ const About = () => {
           </p>
 
           <p>
-            The underlying structure for the other tiers is the same; the major
+            The underlying structure of all the tiers is the same; the major
             difference is in the AI models we use, which become progressively
             more powerful and therefore more “intelligent,” and the usage rate
             is also increased. The Enterprise Tier is aimed at school level,
