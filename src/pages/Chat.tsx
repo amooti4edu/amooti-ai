@@ -12,6 +12,8 @@ import { DailyLimitBadge } from "@/components/DailyLimitBadge";
 import { TeacherResponse } from "@/components/TeacherResponse";
 import { FlashcardQuiz } from "@/components/FlashcardQuiz";
 import { parseQuizResponse } from "@/lib/quiz-parser";
+import { parseGradingResponse } from "@/lib/grading-parser";
+import { QuizLoadingOverlay } from "@/components/QuizLoadingOverlay";
 import type {
   Message,
   ChatMode,
@@ -65,6 +67,7 @@ export default function Chat() {
 
   // Quiz state
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
+  const [quizLoading, setQuizLoading] = useState(false);
 
   const bottomRef      = useRef<HTMLDivElement>(null!);
   const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -337,6 +340,13 @@ export default function Chat() {
     let assistantContent = "";
     let textBuffer = "";
     let assistantBubbleAdded = false;
+    const isQuizMode = mode === "quiz";
+
+    // In quiz mode, show loading overlay instead of streaming text
+    if (isQuizMode) {
+      setQuizLoading(true);
+      stopLoadingPhrases();
+    }
 
     while (true) {
       const { done, value } = await reader.read();
@@ -360,18 +370,21 @@ export default function Chat() {
           const parsed = JSON.parse(jsonStr);
           const delta = parsed.choices?.[0]?.delta?.content;
           if (delta) {
-            if (!assistantBubbleAdded) {
-              assistantBubbleAdded = true;
-              stopLoadingPhrases();
-              setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-            }
-
             assistantContent += delta;
-            setMessages((prev) => {
-              const updated = [...prev];
-              updated[updated.length - 1] = { role: "assistant", content: assistantContent };
-              return updated;
-            });
+
+            // Only show streaming text for non-quiz modes
+            if (!isQuizMode) {
+              if (!assistantBubbleAdded) {
+                assistantBubbleAdded = true;
+                stopLoadingPhrases();
+                setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+              }
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+                return updated;
+              });
+            }
           }
         } catch {
           textBuffer = line + "\n" + textBuffer;
@@ -382,6 +395,7 @@ export default function Chat() {
 
     // ── Fallback ────────────────────────────────────────────────────────────
     if (!assistantContent) {
+      setQuizLoading(false);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: "I didn't receive a response. Please try again." },
@@ -390,17 +404,14 @@ export default function Chat() {
     }
 
     // ── Quiz mode: Parse quiz response ──────────────────────────────────────
-    if (mode === "quiz") {
+    if (isQuizMode) {
       const quizData = parseQuizResponse(assistantContent);
+      setQuizLoading(false);
       if (quizData && quizData.questions.length > 0) {
-        // Initialize quiz session — replace raw JSON message with a friendly note
-        setMessages((prev) => {
-          const withoutRaw = prev.slice(0, -1); // remove raw JSON/markdown message
-          return [
-            ...withoutRaw,
-            { role: "assistant", content: `📝 Quiz ready! ${quizData.questions.length} questions loaded.` },
-          ];
-        });
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `📝 Quiz ready! ${quizData.questions.length} questions loaded.` },
+        ]);
         setQuizSession({
           questionSet: quizData.questions,
           currentIndex: 0,
@@ -410,7 +421,7 @@ export default function Chat() {
         console.log("[Quiz] Initialized session with", quizData.questions.length, "questions");
       } else {
         console.warn("[Quiz] Failed to parse quiz — showing raw response to user");
-        // The raw response stays visible as a normal message (fallback)
+        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
       }
     }
 
@@ -563,27 +574,20 @@ export default function Chat() {
         }
       }
 
-      // Update quiz session with results and mark as submitted
+      // Parse grading response into structured results
       setQuizSession((prev) => {
         if (!prev) return prev;
+        const results = parseGradingResponse(
+          gradingContent,
+          prev.questionSet,
+          prev.studentAnswers
+        );
         return {
           ...prev,
           isSubmitted: true,
-          results: {
-            totalQuestions: prev.questionSet.length,
-            correctAnswers: prev.studentAnswers.length, // Will be updated by grading
-            score: 0, // Will be calculated from grading response
-            explanation: gradingContent,
-            corrections: [],
-          },
+          results,
         };
       });
-
-      // Add grading response to messages
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: gradingContent },
-      ]);
 
       // Persist conversation
       if (activeConversationId) {
@@ -655,7 +659,9 @@ export default function Chat() {
         )}
 
         {/* Messages area */}
-        {quizSession ? (
+        {quizLoading ? (
+          <QuizLoadingOverlay />
+        ) : quizSession ? (
           <div className="flex-1 overflow-y-auto py-6 px-4">
             <FlashcardQuiz
               session={quizSession}
