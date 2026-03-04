@@ -170,7 +170,14 @@ const About = () => {
             <br />
             CEO/Founder
             <br />
-            Domus Dei Tech
+            <a
+              href="https://domusdeitech.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-secondary hover:opacity-80 underline"
+            >
+              Domus Dei Tech
+            </a>
             <br />
             <em>Propter Amorem Dei</em>
           </p>
