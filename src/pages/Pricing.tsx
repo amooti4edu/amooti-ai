@@ -11,7 +11,7 @@ const Pricing = () => {
         "Limited questions per day (5)",
         "AI-powered study assistance",
         "Basic progress tracking",
-        "Personalized responses based on your curriculum",
+        "Personalized responses based on your progress",
       ],
     },
     {
