@@ -397,7 +397,14 @@ export default function Chat() {
     if (mode === "quiz") {
       const quizData = parseQuizResponse(assistantContent);
       if (quizData && quizData.questions.length > 0) {
-        // Initialize quiz session
+        // Initialize quiz session — replace raw JSON message with a friendly note
+        setMessages((prev) => {
+          const withoutRaw = prev.slice(0, -1); // remove raw JSON/markdown message
+          return [
+            ...withoutRaw,
+            { role: "assistant", content: `📝 Quiz ready! ${quizData.questions.length} questions loaded.` },
+          ];
+        });
         setQuizSession({
           questionSet: quizData.questions,
           currentIndex: 0,
@@ -405,6 +412,9 @@ export default function Chat() {
           isSubmitted: false,
         });
         console.log("[Quiz] Initialized session with", quizData.questions.length, "questions");
+      } else {
+        console.warn("[Quiz] Failed to parse quiz — showing raw response to user");
+        // The raw response stays visible as a normal message (fallback)
       }
     }
 

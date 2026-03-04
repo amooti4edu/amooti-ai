@@ -20,6 +20,8 @@ interface FlashcardQuizProps {
   onNext: () => void;
   onPrevious: () => void;
   onSubmit: () => void;
+  onNavigate: (index: number) => void;
+  onClose: () => void;
   isSubmitting?: boolean;
 }
 
