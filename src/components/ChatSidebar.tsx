@@ -18,7 +18,7 @@ export function ChatSidebar({ open, onClose, conversations, activeId, onSelect, 
       )}
 
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-72 flex-shrink-0 bg-sidebar text-sidebar-foreground transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 flex-shrink-0 bg-sidebar text-sidebar-foreground transition-transform ${
           open ? "translate-x-0" : "-translate-x-full"
         } flex flex-col border-r border-sidebar-border`}
       >

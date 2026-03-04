@@ -43,10 +43,15 @@ const Privacy = () => {
                 1. Information We Collect
               </h2>
               <p>
-                We collect information you provide directly to us, such as when
-                you create an account, subscribe to a plan, or contact us for
-                support.
+                We are committed to protecting your privacy. Amooti collects the following types of information:
               </p>
+              <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
+                <li><strong>Account Information:</strong> Email, name, and password when you create an account</li>
+                <li><strong>Profile Information:</strong> Education level, subject of study, and class/grade</li>
+                <li><strong>Learning Data:</strong> Questions you ask, study materials accessed, and your interactions with the service</li>
+                <li><strong>Usage Data:</strong> How often you use Amooti, which features you access, and your subscription tier</li>
+                <li><strong>Device Information:</strong> Browser type, IP address, and device type for security and service improvement</li>
+              </ul>
             </section>
 
             <section>
@@ -54,52 +59,95 @@ const Privacy = () => {
                 2. How We Use Your Information
               </h2>
               <p>
-                We use the information we collect to provide, maintain, and
-                improve our services, process transactions, and send you
-                technical notices and support messages.
+                We use the information we collect for the following purposes:
+              </p>
+              <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
+                <li>Providing and personalizing the Amooti service to your educational needs</li>
+                <li>Generating relevant AI responses based on your subject and educational level</li>
+                <li>Tracking your learning progress and usage statistics</li>
+                <li>Enforcing daily usage limits based on your subscription plan</li>
+                <li>Improving our AI models and service quality</li>
+                <li>Sending you notifications about your account and service updates</li>
+                <li>Preventing fraud and ensuring security</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
+                3. Data Processing and AI Learning
+              </h2>
+              <p>
+                Your learning interactions and questions may be processed by our AI systems to improve the accuracy and relevance of responses we provide. We anonymize and aggregate this data whenever possible. Your personal information is not used to train AI models without your explicit consent.
               </p>
             </section>
 
             <section>
               <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
-                3. Information Sharing
+                4. Information Sharing
               </h2>
               <p>
-                We do not share your personal information with third parties
-                except as necessary to provide our services or as required by
-                law.
+                We do not sell or rent your personal information to third parties. We may share information in the following limited circumstances:
+              </p>
+              <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
+                <li>With service providers who help operate Amooti (e.g., Supabase for data storage)</li>
+                <li>As required by law or government request</li>
+                <li>If necessary to protect our legal rights or the safety of our users</li>
+                <li>With institutional partners if you use Amooti through a school (for enterprise users)</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
+                5. Data Security
+              </h2>
+              <p>
+                We implement industry-standard security measures to protect your personal information, including encryption in transit and at rest. Supabase, our backend service provider, maintains comprehensive security protocols. However, no security system is completely impenetrable, and we cannot guarantee absolute security.
               </p>
             </section>
 
             <section>
               <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
-                4. Data Security
+                6. Data Retention
               </h2>
               <p>
-                We implement appropriate technical and organizational measures
-                to protect your personal information against unauthorized
-                access, alteration, disclosure, or destruction.
+                We retain your account information as long as you maintain an active account. Learning data and chat history are retained to maintain your progress and conversation context. When you delete your account, we permanently delete your personal information within 30 days, though anonymized data may be retained for service improvement.
               </p>
             </section>
 
             <section>
               <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
-                5. Your Rights
+                7. Your Rights and Choices
               </h2>
               <p>
-                You have the right to access, update, or delete your personal
-                information at any time by contacting us.
+                You have the right to:
+              </p>
+              <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
+                <li>Access your personal information and request a copy of your data</li>
+                <li>Update or correct your profile information</li>
+                <li>Delete your account and associated data</li>
+                <li>Opt out of non-essential communications</li>
+                <li>Request information about how your data is being used</li>
+              </ul>
+              <p className="mt-3">
+                To exercise these rights, please contact us at support@amooti.ai
               </p>
             </section>
 
             <section>
               <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
-                6. Changes to This Policy
+                8. Children's Privacy
               </h2>
               <p>
-                We may update this Privacy Policy from time to time. We will
-                notify you of any changes by posting the new policy on our
-                website.
+                Amooti is designed for students of various ages. If you are under 18, please ensure you have parental consent before using our service. We comply with applicable children's privacy laws and do not knowingly collect excessive personal information from minors without appropriate safeguards.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-2xl font-serif font-semibold text-secondary mb-4">
+                9. Changes to This Policy
+              </h2>
+              <p>
+                We may update this Privacy Policy periodically to reflect changes in our practices or applicable laws. We will notify you of significant changes by posting the updated policy on our website and, where appropriate, by email. Your continued use of Amooti constitutes acceptance of the updated Privacy Policy.
               </p>
             </section>
           </div>

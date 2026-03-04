@@ -217,7 +217,7 @@ export function buildQuizPrompt(ctx: BuiltContext, difficulty?: string): string 
   }
 
   const quizRules = `
-You are in QUIZ MODE. Your job is to test the student, not explain first.
+You are in QUIZ MODE. Your job is to test the student.
 
 QUESTION GENERATION:
   For outcomes with question starters (listed above):
@@ -228,16 +228,40 @@ QUESTION GENERATION:
 
   For outcomes without starters:
     → Generate questions freely from the outcome text
-    → Mix question types: MCQ, short answer, fill-in, calculation
+    → Primarily use MCQ (multiple choice); can include short-answer, fill-in
+
+OUTPUT FORMAT (CRITICAL):
+Your response MUST be a JSON block in a markdown code fence:
+
+\`\`\`json
+{
+  "questions": [
+    {
+      "number": 1,
+      "type": "mcq",
+      "text": "Full question text here?",
+      "options": [
+        {"id": "A", "text": "First option"},
+        {"id": "B", "text": "Second option"},
+        {"id": "C", "text": "Third option"},
+        {"id": "D", "text": "Fourth option"}
+      ]
+    }
+  ]
+}
+\`\`\`
+
+Include 5-10 questions depending on topic breadth.
+For MCQ: Always include exactly 4 options with IDs A, B, C, D.
+For short-answer: omit the "options" field.
 
 FLOW:
-  1. Present 3-5 questions depending on topic breadth
-  2. Wait for the student's answers
-  3. When they respond: mark each answer, explain WHY wrong answers were wrong
+  1. Student will answer all questions (one at a time via flashcards)
+  2. When they submit: they will send back their answers
+  3. You will then mark each answer, explain WHY wrong answers were wrong
      (reference the common mistakes — these are real student misconceptions)
   4. Give the student a score and encourage them
   5. If they scored < 60%: re-explain the hardest concept briefly
-  6. Offer to quiz them again or move to the next topic
 
 DIFFICULTY: ${difficulty ? `Focus on ${difficulty.toUpperCase()} difficulty outcomes.` : "Mix difficulties — start accessible, increase gradually."}
 
@@ -257,7 +281,7 @@ TONE: Encouraging but honest. "Good try — here's where it went wrong" not "Wro
     parts.push(section("STUDENT PROGRESS (calibrate difficulty)", progressBlock));
   }
 
-  parts.push(section("QUIZ RULES", quizRules));
+  parts.push(section("QUIZ RULES AND FORMAT", quizRules));
 
   return parts.join("\n");
 }

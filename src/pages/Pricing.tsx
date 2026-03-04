@@ -6,46 +6,53 @@ const Pricing = () => {
     {
       name: "Free",
       price: "Free",
-      description: "Get started with basic features",
+      description: "Start your learning journey with Amooti",
       features: [
         "Limited questions per day",
         "Access to 8 subjects",
-        "Basic study materials",
+        "AI-powered study assistance",
+        "Basic progress tracking",
+        "Personalized responses based on your curriculum",
       ],
     },
     {
       name: "Basic",
       price: "7,000 UGX",
-      description: "For individual students",
+      description: "Perfect for students serious about their studies",
       features: [
-        "Unlimited questions",
+        "Unlimited questions per day",
         "Access to all subjects",
-        "Advanced study materials",
-        "Progress tracking",
+        "AI-generated study materials",
+        "Detailed progress tracking",
+        "Curriculum-aligned responses",
+        "Subject-specific learning modes",
       ],
     },
     {
       name: "Premium",
       price: "15,000 UGX",
-      description: "For dedicated learners",
+      description: "Comprehensive support for advanced learners",
       features: [
         "All Basic features",
-        "Personalized study plans",
-        "One-on-one tutor support",
-        "Offline access",
-        "Certificate of completion",
+        "Personalized study plans based on your level",
+        "Teacher mode for generating lesson documents",
+        "Offline access to downloaded materials",
+        "Flashcard quiz generation and practice",
+        "Priority support",
       ],
     },
     {
       name: "Enterprise",
       price: "Custom",
-      description: "For schools & institutions",
+      description: "Institutional solutions for schools and organizations",
       features: [
-        "School-wide licenses",
+        "School-wide Amooti licenses",
         "Student management dashboard",
-        "Advanced analytics",
+        "Advanced analytics and learning insights",
+        "Curriculum customization",
         "Custom integrations",
-        "Dedicated support",
+        "Dedicated account support",
+        "Professional development for educators",
       ],
     },
   ];
@@ -86,8 +93,11 @@ const Pricing = () => {
           <h1 className="text-4xl md:text-5xl font-serif tracking-wide mb-4 text-secondary text-center">
             Pricing Plans
           </h1>
-          <p className="text-center text-gray-600 mb-12 max-w-2xl mx-auto">
+          <p className="text-center text-gray-600 mb-4 max-w-2xl mx-auto">
             Choose the perfect plan for your learning journey
+          </p>
+          <p className="text-center text-gray-600 mb-12 max-w-3xl mx-auto">
+            Amooti makes quality education accessible to every student. Whether you're just exploring or ready to master your curriculum, we have a plan that fits your needs. All plans include AI-powered study assistance designed specifically for African students.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">

@@ -1,0 +1,276 @@
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import { CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import type {
+  QuizSession,
+  QuizQuestion,
+  StudentAnswer,
+  QuizResults,
+} from "@/types/quiz";
+
+interface FlashcardQuizProps {
+  session: QuizSession;
+  onAnswerChange: (questionId: string, answer: string) => void;
+  onNext: () => void;
+  onPrevious: () => void;
+  onSubmit: () => void;
+  isSubmitting?: boolean;
+}
+
+export function FlashcardQuiz({
+  session,
+  onAnswerChange,
+  onNext,
+  onPrevious,
+  onSubmit,
+  isSubmitting = false,
+}: FlashcardQuizProps) {
+  const { questionSet, currentIndex, studentAnswers, isSubmitted, results } =
+    session;
+  const currentQuestion = questionSet[currentIndex];
+  const currentAnswer =
+    studentAnswers.find((a) => a.questionId === currentQuestion.id)?.answer || "";
+  const totalQuestions = questionSet.length;
+  const progress = ((currentIndex + 1) / totalQuestions) * 100;
+
+  if (isSubmitted && results) {
+    return <QuizResultsView results={results} totalQuestions={totalQuestions} />;
+  }
+
+  return (
+    <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
+      {/* Progress bar */}
+      <div className="space-y-2">
+        <div className="flex justify-between text-sm text-muted-foreground">
+          <span>
+            Question {currentIndex + 1} of {totalQuestions}
+          </span>
+          <span>{Math.round(progress)}%</span>
+        </div>
+        <Progress value={progress} className="h-2" />
+      </div>
+
+      {/* Question card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">
+            {currentQuestion.text}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* MCQ Options */}
+          {currentQuestion.type === "mcq" && currentQuestion.options && (
+            <RadioGroup value={currentAnswer} onValueChange={(val) => onAnswerChange(currentQuestion.id, val)}>
+              <div className="space-y-3">
+                {currentQuestion.options.map((option) => (
+                  <div key={option.id} className="flex items-center space-x-2">
+                    <RadioGroupItem value={option.id} id={option.id} />
+                    <Label htmlFor={option.id} className="cursor-pointer flex-1">
+                      <span className="font-semibold">{option.id}.</span> {option.text}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </RadioGroup>
+          )}
+
+          {/* Short answer input */}
+          {(currentQuestion.type === "short-answer" ||
+            currentQuestion.type === "fill-in") && (
+            <Input
+              placeholder="Type your answer..."
+              value={currentAnswer}
+              onChange={(e) => onAnswerChange(currentQuestion.id, e.target.value)}
+              className="w-full"
+            />
+          )}
+
+          {/* Calculation input */}
+          {currentQuestion.type === "calculation" && (
+            <Input
+              placeholder="Enter your answer (number)"
+              type="number"
+              value={currentAnswer}
+              onChange={(e) => onAnswerChange(currentQuestion.id, e.target.value)}
+              className="w-full"
+            />
+          )}
+
+          {/* Question image if available */}
+          {currentQuestion.imageUrl && (
+            <img
+              src={currentQuestion.imageUrl}
+              alt="Question visual"
+              className="max-w-full h-auto rounded-lg my-4"
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Navigation buttons */}
+      <div className="flex justify-between gap-3">
+        <Button
+          onClick={onPrevious}
+          disabled={currentIndex === 0}
+          variant="outline"
+        >
+          Previous
+        </Button>
+
+        <div className="space-x-2">
+          {currentIndex < totalQuestions - 1 ? (
+            <Button onClick={onNext} disabled={!currentAnswer}>
+              Next
+            </Button>
+          ) : (
+            <Button
+              onClick={onSubmit}
+              disabled={isSubmitting || studentAnswers.length < totalQuestions}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isSubmitting ? "Submitting..." : "Submit Quiz"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Answer status indicator */}
+      <div className="flex gap-2 flex-wrap">
+        {questionSet.map((q, idx) => {
+          const hasAnswer = studentAnswers.some((a) => a.questionId === q.id);
+          return (
+            <button
+              key={q.id}
+              onClick={() => {
+                // Navigate to this question
+                // This would require parent to pass navigation callback
+              }}
+              className={`w-10 h-10 rounded flex items-center justify-center text-sm font-semibold transition-colors ${
+                idx === currentIndex
+                  ? "border-2 border-primary bg-primary/10"
+                  : hasAnswer
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {idx + 1}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Display quiz results with corrections
+ */
+function QuizResultsView({
+  results,
+  totalQuestions,
+}: {
+  results: QuizResults;
+  totalQuestions: number;
+}) {
+  const scoreColor =
+    results.score >= 80
+      ? "text-green-600"
+      : results.score >= 60
+        ? "text-yellow-600"
+        : "text-red-600";
+
+  return (
+    <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
+      {/* Score summary */}
+      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+        <CardHeader>
+          <CardTitle>Quiz Results</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Your Score</p>
+              <p className={`text-4xl font-bold ${scoreColor}`}>
+                {results.score.toFixed(1)}%
+              </p>
+              <p className="text-base text-muted-foreground">
+                {results.correctAnswers} out of {totalQuestions} correct
+              </p>
+            </div>
+            <div className={`text-6xl ${scoreColor}`}>
+              {results.score >= 80 ? (
+                <CheckCircle2 size={80} />
+              ) : results.score >= 60 ? (
+                <AlertCircle size={80} />
+              ) : (
+                <XCircle size={80} />
+              )}
+            </div>
+          </div>
+
+          <Textarea
+            readOnly
+            value={results.explanation}
+            className="mt-4 h-24 text-sm"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Corrections */}
+      <div className="space-y-3">
+        <h3 className="font-semibold text-lg">Corrections & Feedback</h3>
+        {results.corrections.map((correction, idx) => (
+          <Card
+            key={idx}
+            className={
+              correction.isCorrect
+                ? "border-green-200 bg-green-50"
+                : "border-red-200 bg-red-50"
+            }
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    Question {correction.questionNumber}
+                  </p>
+                  <p className="font-medium">{correction.question}</p>
+                </div>
+                {correction.isCorrect ? (
+                  <CheckCircle2 className="text-green-600 flex-shrink-0" />
+                ) : (
+                  <XCircle className="text-red-600 flex-shrink-0" />
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div>
+                <p className="text-muted-foreground">Your answer:</p>
+                <p className="font-mono bg-white/50 p-2 rounded">
+                  {correction.studentAnswer}
+                </p>
+              </div>
+              {!correction.isCorrect && (
+                <div>
+                  <p className="text-muted-foreground">Correct answer:</p>
+                  <p className="font-mono bg-white/50 p-2 rounded text-green-700">
+                    {correction.correctAnswer}
+                  </p>
+                </div>
+              )}
+              <div className="bg-white/50 p-2 rounded border-l-2 border-blue-500">
+                <p className="text-sm">{correction.explanation}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}

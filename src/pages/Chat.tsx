@@ -10,6 +10,8 @@ import { ModeSelector } from "@/components/ModeSelector";
 import { DifficultySelector } from "@/components/DifficultySelector";
 import { DailyLimitBadge } from "@/components/DailyLimitBadge";
 import { TeacherResponse } from "@/components/TeacherResponse";
+import { FlashcardQuiz } from "@/components/FlashcardQuiz";
+import { parseQuizResponse } from "@/lib/quiz-parser";
 import type {
   Message,
   ChatMode,
@@ -18,6 +20,7 @@ import type {
   TeacherDoc,
   ApiError,
 } from "@/types/chat";
+import type { QuizSession, StudentAnswer } from "@/types/quiz";
 
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github.css";
@@ -59,6 +62,9 @@ export default function Chat() {
   const [teacherDoc, setTeacherDoc] = useState<TeacherDoc | null>(null);
   const [subject, setSubject]       = useState<string | undefined>(undefined);
   const [userClass, setUserClass]   = useState<string | undefined>(undefined);
+
+  // Quiz state
+  const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
 
   const bottomRef      = useRef<HTMLDivElement>(null!);
   const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -147,6 +153,7 @@ export default function Chat() {
     setMessages([]);
     setTeacherDoc(null);
     setApiError(null);
+    setQuizSession(null);
     setSidebarOpen(false);
   };
 
@@ -386,6 +393,21 @@ export default function Chat() {
       return;
     }
 
+    // ── Quiz mode: Parse quiz response ──────────────────────────────────────
+    if (mode === "quiz") {
+      const quizData = parseQuizResponse(assistantContent);
+      if (quizData && quizData.questions.length > 0) {
+        // Initialize quiz session
+        setQuizSession({
+          questionSet: quizData.questions,
+          currentIndex: 0,
+          studentAnswers: [],
+          isSubmitted: false,
+        });
+        console.log("[Quiz] Initialized session with", quizData.questions.length, "questions");
+      }
+    }
+
     // ── Persist ─────────────────────────────────────────────────────────────
     if (convId) {
       await supabase.from("messages").insert({
@@ -403,6 +425,173 @@ export default function Chat() {
   };
 
   if (loading) return null;
+
+  // ── Quiz handlers ──────────────────────────────────────────────────────────
+  const handleQuizAnswerChange = (questionId: string, answer: string) => {
+    if (!quizSession) return;
+
+    setQuizSession((prev) => {
+      if (!prev) return prev;
+
+      const existingIndex = prev.studentAnswers.findIndex(
+        (a) => a.questionId === questionId
+      );
+
+      let updatedAnswers: StudentAnswer[];
+      if (existingIndex >= 0) {
+        updatedAnswers = [...prev.studentAnswers];
+        updatedAnswers[existingIndex] = { questionId, answer };
+      } else {
+        updatedAnswers = [...prev.studentAnswers, { questionId, answer }];
+      }
+
+      return {
+        ...prev,
+        studentAnswers: updatedAnswers,
+      };
+    });
+  };
+
+  const handleQuizNext = () => {
+    setQuizSession((prev) => {
+      if (!prev || prev.currentIndex >= prev.questionSet.length - 1) return prev;
+      return { ...prev, currentIndex: prev.currentIndex + 1 };
+    });
+  };
+
+  const handleQuizPrevious = () => {
+    setQuizSession((prev) => {
+      if (!prev || prev.currentIndex === 0) return prev;
+      return { ...prev, currentIndex: prev.currentIndex - 1 };
+    });
+  };
+
+  const handleQuizSubmit = async () => {
+    if (!quizSession || !session) return;
+
+    setIsLoading(true);
+    startLoadingPhrases(THINKING_PHRASES);
+
+    try {
+      // Get the student's answers
+      const answersText = quizSession.studentAnswers
+        .map((a) => {
+          const q = quizSession.questionSet.find((q) => q.id === a.questionId);
+          return `Q${q?.number}: ${a.answer}`;
+        })
+        .join("\n");
+
+      const quizResultMessage: Message = {
+        role: "user",
+        content: `Here are my answers to the quiz:\n\n${answersText}\n\nPlease grade them and provide feedback.`,
+      };
+
+      const allMessages = [...messages, quizResultMessage];
+      setMessages(allMessages);
+
+      // Get access token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("No access token");
+
+      // Send answers to model for grading
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
+          mode: "quiz", // Still in quiz mode for grading
+          ...(difficulty ? { difficulty } : {}),
+          ...(subject ? { subject } : {}),
+          ...(userClass ? { class: userClass } : {}),
+        }),
+      });
+
+      if (!resp.ok) {
+        const error = await parseApiError(resp);
+        setApiError(error);
+        if (error.type === "auth") navigate("/");
+        return;
+      }
+
+      if (!resp.body) throw new Error("Response has no body");
+
+      // Read grading response
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let gradingContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        let textBuffer = decoder.decode(value, { stream: true });
+        const lines = textBuffer.split("\n");
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) gradingContent += delta;
+          } catch {
+            // Skip parse errors
+          }
+        }
+      }
+
+      // Update quiz session with results and mark as submitted
+      setQuizSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          isSubmitted: true,
+          results: {
+            totalQuestions: prev.questionSet.length,
+            correctAnswers: prev.studentAnswers.length, // Will be updated by grading
+            score: 0, // Will be calculated from grading response
+            explanation: gradingContent,
+            corrections: [],
+          },
+        };
+      });
+
+      // Add grading response to messages
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: gradingContent },
+      ]);
+
+      // Persist conversation
+      if (activeConversationId) {
+        await supabase.from("messages").insert({
+          conversation_id: activeConversationId,
+          role: "user",
+          content: quizResultMessage.content,
+        });
+        await supabase.from("messages").insert({
+          conversation_id: activeConversationId,
+          role: "assistant",
+          content: gradingContent,
+        });
+      }
+    } catch (err: any) {
+      console.error("Quiz submission error:", err);
+      setApiError({
+        type: "server",
+        message: "Error submitting quiz. Please try again.",
+      });
+    } finally {
+      stopLoadingPhrases();
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-background">
@@ -449,7 +638,18 @@ export default function Chat() {
         )}
 
         {/* Messages area */}
-        {teacherDoc && !isLoading ? (
+        {quizSession ? (
+          <div className="flex-1 overflow-y-auto py-6 px-4">
+            <FlashcardQuiz
+              session={quizSession}
+              onAnswerChange={handleQuizAnswerChange}
+              onNext={handleQuizNext}
+              onPrevious={handleQuizPrevious}
+              onSubmit={handleQuizSubmit}
+              isSubmitting={isLoading}
+            />
+          </div>
+        ) : teacherDoc && !isLoading ? (
           <div className="flex-1 overflow-y-auto py-6 px-4">
             <TeacherResponse doc={teacherDoc} />
           </div>
@@ -463,17 +663,19 @@ export default function Chat() {
         )}
 
         {/* Controls bar: mode selector + difficulty */}
-        <div className="flex flex-wrap items-center gap-3 border-t px-4 py-2 bg-background">
-          <ModeSelector mode={mode} onModeChange={setMode} tier={userTier} />
-          {mode === "quiz" && (
-            <DifficultySelector
-              difficulty={difficulty}
-              onDifficultyChange={setDifficulty}
-            />
-          )}
-        </div>
+        {!quizSession && (
+          <div className="flex flex-wrap items-center gap-3 border-t px-4 py-2 bg-background">
+            <ModeSelector mode={mode} onModeChange={setMode} tier={userTier} />
+            {mode === "quiz" && (
+              <DifficultySelector
+                difficulty={difficulty}
+                onDifficultyChange={setDifficulty}
+              />
+            )}
+          </div>
+        )}
 
-        <ChatInput onSend={handleSend} disabled={isLoading} />
+        {!quizSession && <ChatInput onSend={handleSend} disabled={isLoading} />}
       </div>
     </div>
   );
