@@ -476,6 +476,17 @@ export default function Chat() {
     });
   };
 
+  const handleQuizNavigate = (index: number) => {
+    setQuizSession((prev) => {
+      if (!prev || index < 0 || index >= prev.questionSet.length) return prev;
+      return { ...prev, currentIndex: index };
+    });
+  };
+
+  const handleQuizClose = () => {
+    setQuizSession(null);
+  };
+
   const handleQuizSubmit = async () => {
     if (!quizSession || !session) return;
 
@@ -656,6 +667,8 @@ export default function Chat() {
               onNext={handleQuizNext}
               onPrevious={handleQuizPrevious}
               onSubmit={handleQuizSubmit}
+              onNavigate={handleQuizNavigate}
+              onClose={handleQuizClose}
               isSubmitting={isLoading}
             />
           </div>
