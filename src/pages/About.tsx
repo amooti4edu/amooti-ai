@@ -5,7 +5,10 @@ const About = () => {
     <div className="min-h-screen w-full bg-white">
       {/* Navigation */}
       <nav className="flex items-center justify-between px-6 py-6 md:px-12 lg:px-20 border-b">
-        <Link to="/" className="text-secondary font-serif text-2xl md:text-3xl tracking-wide hover:opacity-80">
+        <Link
+          to="/"
+          className="text-secondary font-serif text-2xl md:text-3xl tracking-wide hover:opacity-80"
+        >
           <img
             src="/apple-touch-icon.png"
             alt="Amooti Logo"
@@ -13,177 +16,180 @@ const About = () => {
           />
         </Link>
         <div className="flex items-center gap-4 md:gap-8 text-sm md:text-base font-medium">
-          <Link to="/about" className="text-secondary hover:opacity-80">About</Link>
-          <Link to="/pricing" className="text-secondary hover:opacity-80">Pricing</Link>
-          <Link to="/subjects" className="text-secondary hover:opacity-80">Subjects</Link>
-          <Link to="/login/student" className="text-secondary hover:opacity-80">Sign In</Link>
+          <Link to="/about" className="text-secondary hover:opacity-80">
+            About
+          </Link>
+          <Link to="/pricing" className="text-secondary hover:opacity-80">
+            Pricing
+          </Link>
+          <Link to="/subjects" className="text-secondary hover:opacity-80">
+            Subjects
+          </Link>
+          <Link
+            to="/login/student"
+            className="text-secondary hover:opacity-80"
+          >
+            Sign In
+          </Link>
         </div>
       </nav>
 
       {/* Main Content */}
       <div className="px-6 py-12 md:px-12 lg:px-20 max-w-4xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-serif tracking-wide mb-2 text-secondary">
+        <h1 className="text-4xl md:text-5xl font-serif tracking-wide mb-8 text-secondary">
           About Amooti
         </h1>
-        <p className="text-sm text-gray-400 italic mb-10 tracking-widest uppercase">
-          Artificial Intelligence Mentor Optimised for Ongoing Tutelage and Innovation
-        </p>
 
         <div className="prose prose-lg max-w-none text-gray-700 space-y-6">
-
-          {/* Intro & Origin */}
           <p>
-            Welcome to <strong>Amooti</strong> — your AI study companion. The name is an acronym
-            for <em>Artificial Intelligence Mentor Optimised for Ongoing Tutelage and Innovation</em>,
-            but it carries a deeper meaning too.
+            Welcome to <strong>Amooti</strong>, an acronym of <em>
+              Artificial Intelligence Mentor Optimised for Ongoing Tutelage and Innovation
+            </em>{" "}
+            — in short, your AI study companion.
           </p>
 
           <p>
-            Amooti is also a heartfelt tribute to my late mother, <strong>Nyangoma Catherine Amooti</strong>.
-            Every evening after work, without fail, she would sit with us and walk us through what we had
-            learned that day — helping us understand it, make sense of it, and see where it fit in the
-            bigger picture of life. That spirit of patient, contextual learning is the very soul of this app.
-          </p>
-
-          {/* Vision */}
-          <p>
-            The goal and vision of Amooti is simple: <em>to help students not just learn content, but
-            truly understand it — and understand why it matters.</em> Students today, as in every generation,
-            still ask, <strong>"Why am I learning this?"</strong> Amooti exists to answer that question.
-          </p>
-
-          {/* Not a teacher */}
-          <p>
-            As smart as Amooti is, it can never replace a teacher — and it is not trying to. That is
-            precisely why it is a <em>tutor</em>, not a teacher. Think of Amooti as a very, very
-            knowledgeable study companion: always available, always patient, and always ready to help
-            you get to grips with what you are supposed to be learning.
-          </p>
-
-          {/* Curriculum */}
-          <p>
-            Amooti has been trained on <strong>Uganda's new secondary school curriculum</strong>.
-            To explore the subjects we have covered so far,{" "}
-            <Link to="/subjects" className="text-secondary underline hover:opacity-80">
-              tap on the Subjects button
-            </Link>.
-          </p>
-
-          {/* Curriculum quotes */}
-          <div className="border-l-4 border-secondary pl-5 my-6 space-y-4">
-            <p className="text-gray-600 italic">
-              "Promoting inquisitive minds that do not shy away from asking 'Why', until they can get
-              a grip on what it is they are supposed to learn — which in turn creates understanding and
-              skills for a lifetime."
-            </p>
-            <p className="text-xs text-gray-400">— Uganda Curriculum Framework, p. 1</p>
-          </div>
-
-          <p>
-            In line with this, Amooti has also adopted the vision of the new curriculum's four
-            Key Learning Outcomes:
-          </p>
-
-          <ul className="list-disc list-inside space-y-1 text-gray-700 ml-2">
-            <li>Self-assured individuals</li>
-            <li>Responsible and patriotic citizens</li>
-            <li>Lifelong learners</li>
-            <li>Positive contributors to society</li>
-          </ul>
-          <p className="text-xs text-gray-400 -mt-2 ml-2">— Uganda Curriculum Framework, p. 6</p>
-
-          {/* Membership tiers */}
-          <h2 className="text-2xl font-serif text-secondary mt-10 mb-2">Membership Tiers</h2>
-
-          <p>
-            Amooti currently offers <strong>four tiers of membership</strong>.
+            It is also a tribute to my late mother, Nyangoma Catherine Amooti,
+            who every evening after work would sit with us and help us go
+            through what we had learnt that day, to help us understand it better
+            and put it in context. This is the goal and vision of Amooti — to
+            help students understand both the content and the context of what they are
+            learning. I am sure that today, as it was during our days in school, students
+            still ask, “Why am I learning this?”. Amooti is here to help answer that.
           </p>
 
           <p>
-            We offer a <strong>Free Tier</strong> because we understand the reality many Ugandan families
-            face. Education is becoming increasingly out of reach for low-income earners, and we want to
-            serve as many students as possible — at no cost. The free tier currently allows <strong>5
-            queries per day</strong>. As the app grows and our resources increase, we hope to raise this
-            limit significantly.
+            As smart as Amooti is, it can never replace a teacher — and it is not trying to. 
+            That is precisely why it is a tutor, not a teacher. 
+            Think of Amooti as a very, very knowledgeable study companion: 
+            always available, always patient, and always ready to help you get to grips with 
+            what you are learning.
           </p>
 
           <p>
-            The three paid tiers — <strong>Basic, Premium, and Enterprise</strong> — share the same
-            underlying structure. The key differences are the AI models used (which become progressively
-            more powerful and capable) and the daily usage limits (which increase with each tier).
+            Amooti has been trained on the new NCDC secondary school curriculum to:
+          </p>
+
+          <blockquote>
+            “Promote inquisitive minds that do not shy away from asking ‘Why’
+            until they can get a grip on what it is they are supposed to learn,
+            which in turn creates understanding and skills for a lifetime.”
+            <br />
+            <span className="text-sm">— Curriculum Framework, p. 1</span>
+          </blockquote>
+
+          <p>
+          To see the number of subjects we have covered so far, tap on the
+            <strong> Subjects </strong> button.
           </p>
 
           <p>
-            The <strong>Enterprise Tier</strong> is designed for schools: rather than individual student
-            accounts, a single institutional account covers the entire school — with significant benefits
-            for administration, teachers, and students alike.
+            As such, the app has adopted the vision:
           </p>
 
-          {/* Personal accounts */}
-          <p>
-            We encourage every student to maintain their own <strong>personal account</strong>. This is
-            important — it is the only way Amooti can keep track of what you have discussed, identify
-            where you need further support, and recognise what you have already understood.
-          </p>
-
-          {/* How to use */}
-          <h2 className="text-2xl font-serif text-secondary mt-10 mb-2">How to Use Amooti</h2>
+          <blockquote>
+            “The new curriculum focuses on four ‘Key Learning Outcomes’:
+            <br />• self-assured individuals
+            <br />• responsible and patriotic citizens
+            <br />• lifelong learners
+            <br />• positive contributors to society.”
+            <br />
+            <span className="text-sm">— Curriculum Framework, p. 6</span>
+          </blockquote>
 
           <p>
-            As a student, you have two main ways to engage with Amooti:
+            To further understand how we work 
+            I encourage you to read our Terms of Service and Privacy Policy.
           </p>
 
-          <ul className="list-disc list-inside space-y-2 text-gray-700 ml-2">
+          <p>
+            Currently, we have four tiers of membership. We have a Free Tier
+            because we understand our situation as Ugandans. Education is
+            becoming more and more untenable for many low-income earners. With
+            the Free Tier, we hope to serve as many students as possible without
+            them needing to pay anything. However, because of how expensive it
+            is to use AI, we can only currently offer 5 queries a day — with the hope that
+            as the app grows and our resources increase, we will be able to
+            raise this limit significantly.
+          </p>
+
+          <p>
+            The underlying structure for the other tiers is the same; the major
+            difference is in the AI models we use, which become progressively
+            more powerful and therefore more “intelligent,” and the usage rate
+            is also increased. The Enterprise Tier is aimed at school level,
+            where instead of individual student accounts, we provide one account
+            for the whole school. This too has its benefits.
+          </p>
+
+          <p>
+            That being said, I encourage each student to have their own personal
+            account. This is important because it is the only way Amooti will be
+            able to know what you have discussed so far, identify where you need further support, 
+            and what you have grasped.
+          </p>
+
+          <p>
+            Usage is very simple. You have two main ways/modes you can use the app as
+            a student:
+          </p>
+
+          <ul>
             <li>
-              <strong>Ask</strong> — pose a question directly, e.g. <em>"Explain phototropism to me"</em>{" "}
-              or <em>"What is phototropism?"</em>
+              Mode 1: You can ask a question (<strong>Ask</strong>) — e.g., “Explain
+              phototropism” or “What is phototropism?” And Amooti will answer you accordingly.
             </li>
             <li>
-              <strong>Quiz Me</strong> — ask Amooti to test your understanding, e.g.{" "}
-              <em>"Quiz me about phototropism."</em>
+              Mode 2: You can tell Amooti to quiz you (<strong>Quiz Me</strong>) —
+              e.g., “Quiz me about phototropism.” And you will be asked questions and after 
+              you have answered, you will be marked and corrected.
             </li>
           </ul>
 
-          <p>Always make sure to select the appropriate mode before you begin.</p>
-
           <p>
-            <strong>Teachers</strong> can also use Amooti to explore ideas for teaching a concept, or
-            to generate a scheme of work for a particular topic — downloadable as a document. Teacher
-            Mode is available under the <strong>Premium Tier</strong> and above.
+            So make sure to select the appropriate mode you want to properly use it.
           </p>
 
-          {/* Terms */}
           <p>
-            We encourage you to read our{" "}
-            <Link to="/terms" className="text-secondary underline hover:opacity-80">Terms of Service</Link>{" "}
-            and{" "}
-            <Link to="/privacy" className="text-secondary underline hover:opacity-80">Privacy Policy</Link>{" "}
-            to understand how we handle your data and protect your privacy.
+            Teachers can also use it to get ideas on how to teach a certain
+            concept, and it is capable of generating a scheme for a particular
+            topic as a downloadable document. However Teacher Mode is only accessible
+            under the Premium Tier of membership.
           </p>
 
-          {/* Closing */}
-          <div className="border-t pt-8 mt-10">
-            <p className="text-gray-600 italic">
-              I hope Amooti brings you as much joy as it brought me while building it —
-              for God and for my Country.
-            </p>
-            <div className="mt-4">
-              <p className="font-semibold text-secondary">Amanyire Daniel</p>
-              <p className="text-sm text-gray-500">CEO &amp; Founder, Domus Dei Tech</p>
-              <p className="text-sm text-gray-400 italic">Propter Amorem Dei</p>
-            </div>
-          </div>
+          <p>
+            You are most welcome to the future. I hope Amooti will bring you as much joy as it did me as I was
+            building it — for God and my Country.
+            Feel free to contact us any time with feedback and any other questions or communications.
+          </p>
 
+          <p className="pt-4">
+            With my best regards,
+            <br />
+            <strong>Amanyire Daniel</strong>
+            <br />
+            CEO/Founder
+            <br />
+            Domus Dei Tech
+            <br />
+            <em>Propter Amorem Dei</em>
+          </p>
         </div>
       </div>
 
       {/* Footer */}
       <footer className="border-t bg-gray-50 px-6 py-8 md:px-12 lg:px-20 mt-12">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-6">
-          <p className="text-gray-600 text-sm">© 2026 Domus Dei Tech | Amooti. All rights reserved.</p>
+          <p className="text-gray-600 text-sm">
+            © 2026 Domus Dei Tech | Amooti. All rights reserved.
+          </p>
           <div className="flex gap-6 text-sm">
-            <Link to="/terms" className="text-secondary hover:opacity-80">Terms of Service</Link>
-            <Link to="/privacy" className="text-secondary hover:opacity-80">Privacy Policy</Link>
+            <Link to="/terms" className="text-secondary hover:opacity-80">
+              Terms of Service
+            </Link>
+            <Link to="/privacy" className="text-secondary hover:opacity-80">
+              Privacy Policy
+            </Link>
           </div>
         </div>
       </footer>
