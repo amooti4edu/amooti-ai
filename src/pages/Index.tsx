@@ -60,7 +60,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/20 bg-black/30 backdrop-blur-sm px-6 py-6 md:px-12 lg:px-20">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-hero text-sm">© 2026 Amooti. All rights reserved.</p>
+          <p className="text-hero text-sm">© 2026 Domus Dei Tech | Amooti. All rights reserved.</p>
           <div className="flex gap-6 text-sm">
             <Link to="/terms" className="nav-link-hero">
               Terms of Service
