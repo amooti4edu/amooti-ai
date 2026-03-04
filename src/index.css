@@ -137,3 +137,106 @@
     color: hsl(var(--foreground));
   }
 }
+/* ─────────────────────────────────────────────────────────────
+   Infinite Marquee Carousel
+   Paste this into your index.css / globals.css
+   ───────────────────────────────────────────────────────────── */
+
+/* Keyframes */
+@keyframes marquee-left {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes marquee-right {
+  0%   { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+/* Wrapper that clips overflow */
+.marquee-track {
+  overflow: hidden;
+  width: 100%;
+}
+
+/* The animated strip — must be 200% wide (original + duplicate) */
+.marquee-inner {
+  display: flex;
+  width: max-content;        /* grows to fit all cards */
+  will-change: transform;
+}
+
+/* Pause on hover */
+.marquee-track:hover .marquee-inner {
+  animation-play-state: paused;
+}
+
+/* Individual card */
+.marquee-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1.1rem;
+  margin: 0 0.5rem;
+  border-radius: 9999px;                   /* pill shape */
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  white-space: nowrap;
+  cursor: default;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.marquee-card:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-2px);
+}
+
+.marquee-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.marquee-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.90);
+  letter-spacing: 0.01em;
+}
+
+/* Section label above each row */
+.carousel-label {
+  text-align: center;
+  font-size: 0.70rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 0.5rem;
+}
+
+/* Soft left/right fade masks */
+.carousel-section {
+  position: relative;
+}
+
+.carousel-fade-left,
+.carousel-fade-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.carousel-fade-left {
+  left: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0.45), transparent);
+}
+
+.carousel-fade-right {
+  right: 0;
+  background: linear-gradient(to left, rgba(0,0,0,0.45), transparent);
+}
