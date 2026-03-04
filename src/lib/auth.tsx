@@ -4,9 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface Profile {
   id: string;
-  user_id: string;
   display_name: string | null;
-  role: "student" | "school";
+  role: string;
+  tier: string;
+  subject: string | null;
+  class: string | null;
 }
 
 interface AuthContextType {
@@ -30,10 +32,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
       .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
+      .select("id, display_name, role, tier, subject, class")
+      .eq("id", userId)
       .single();
-    if (data) setProfile(data as Profile);
+    if (data) setProfile(data as unknown as Profile);
   };
 
   useEffect(() => {

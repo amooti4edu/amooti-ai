@@ -366,66 +366,60 @@ export type Database = {
       profiles: {
         Row: {
           class: string | null
-          created_at: string
+          created_at: string | null
           display_name: string | null
           id: string
-          role: Database["public"]["Enums"]["app_role"]
+          role: string
           subject: string | null
           tier: string
-          updated_at: string
-          user_id: string
+          updated_at: string | null
         }
         Insert: {
           class?: string | null
-          created_at?: string
+          created_at?: string | null
           display_name?: string | null
-          id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          id: string
+          role?: string
           subject?: string | null
           tier?: string
-          updated_at?: string
-          user_id: string
+          updated_at?: string | null
         }
         Update: {
           class?: string | null
-          created_at?: string
+          created_at?: string | null
           display_name?: string | null
           id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          role?: string
           subject?: string | null
           tier?: string
-          updated_at?: string
-          user_id?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
       rate_limits: {
         Row: {
-          burst_count: number
-          daily_count: number
-          id: string
+          burst_count: number | null
+          daily_count: number | null
           last_day: string | null
-          request_count: number
+          updated_at: string | null
           user_id: string
-          window_start: string
+          window_start: string | null
         }
         Insert: {
-          burst_count?: number
-          daily_count?: number
-          id?: string
+          burst_count?: number | null
+          daily_count?: number | null
           last_day?: string | null
-          request_count?: number
+          updated_at?: string | null
           user_id: string
-          window_start?: string
+          window_start?: string | null
         }
         Update: {
-          burst_count?: number
-          daily_count?: number
-          id?: string
+          burst_count?: number | null
+          daily_count?: number | null
           last_day?: string | null
-          request_count?: number
+          updated_at?: string | null
           user_id?: string
-          window_start?: string
+          window_start?: string | null
         }
         Relationships: []
       }
