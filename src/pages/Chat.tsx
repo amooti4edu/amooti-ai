@@ -397,7 +397,14 @@ export default function Chat() {
     if (mode === "quiz") {
       const quizData = parseQuizResponse(assistantContent);
       if (quizData && quizData.questions.length > 0) {
-        // Initialize quiz session
+        // Initialize quiz session — replace raw JSON message with a friendly note
+        setMessages((prev) => {
+          const withoutRaw = prev.slice(0, -1); // remove raw JSON/markdown message
+          return [
+            ...withoutRaw,
+            { role: "assistant", content: `📝 Quiz ready! ${quizData.questions.length} questions loaded.` },
+          ];
+        });
         setQuizSession({
           questionSet: quizData.questions,
           currentIndex: 0,
@@ -405,6 +412,9 @@ export default function Chat() {
           isSubmitted: false,
         });
         console.log("[Quiz] Initialized session with", quizData.questions.length, "questions");
+      } else {
+        console.warn("[Quiz] Failed to parse quiz — showing raw response to user");
+        // The raw response stays visible as a normal message (fallback)
       }
     }
 
@@ -464,6 +474,17 @@ export default function Chat() {
       if (!prev || prev.currentIndex === 0) return prev;
       return { ...prev, currentIndex: prev.currentIndex - 1 };
     });
+  };
+
+  const handleQuizNavigate = (index: number) => {
+    setQuizSession((prev) => {
+      if (!prev || index < 0 || index >= prev.questionSet.length) return prev;
+      return { ...prev, currentIndex: index };
+    });
+  };
+
+  const handleQuizClose = () => {
+    setQuizSession(null);
   };
 
   const handleQuizSubmit = async () => {
@@ -646,6 +667,8 @@ export default function Chat() {
               onNext={handleQuizNext}
               onPrevious={handleQuizPrevious}
               onSubmit={handleQuizSubmit}
+              onNavigate={handleQuizNavigate}
+              onClose={handleQuizClose}
               isSubmitting={isLoading}
             />
           </div>

@@ -6,32 +6,38 @@ import type { QuizQuestion, QuizData, QuestionType } from "@/types/quiz";
 
 /**
  * Parse JSON-formatted quiz from AI response
- * The AI should return a JSON block like:
- * ```json
- * {
- *   "questions": [
- *     {
- *       "number": 1,
- *       "type": "mcq",
- *       "text": "What is...",
- *       "options": [
- *         {"id": "A", "text": "..."},
- *         {"id": "B", "text": "..."}
- *       ]
- *     }
- *   ]
- * }
- * ```
+ * Handles various formats the AI might use:
+ * - ```json ... ```
+ * - ```JSON ... ```
+ * - ``` ... ```  (no language tag)
+ * - Raw JSON object
+ * - JSON embedded in surrounding text
  */
 export function parseQuizJSON(content: string): QuizData | null {
   try {
-    // Try to extract JSON block from the content
-    const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) ||
-                      content.match(/\{[\s\S]*\}/);
+    // Try multiple patterns for extracting JSON
+    const patterns = [
+      /```(?:json|JSON)?\s*\n?([\s\S]*?)\n?\s*```/,   // fenced code block
+      /(\{[\s\S]*"questions"[\s\S]*\})/,                 // any object with "questions" key
+    ];
 
-    if (!jsonMatch) return null;
+    let jsonStr: string | null = null;
 
-    const jsonStr = jsonMatch[1] || jsonMatch[0];
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match) {
+        jsonStr = match[1] || match[0];
+        break;
+      }
+    }
+
+    if (!jsonStr) return null;
+
+    // Clean up common issues
+    jsonStr = jsonStr.trim();
+    // Remove trailing commas before } or ]
+    jsonStr = jsonStr.replace(/,\s*([}\]])/g, "$1");
+
     const parsed = JSON.parse(jsonStr);
 
     if (!parsed.questions || !Array.isArray(parsed.questions)) {
@@ -41,7 +47,7 @@ export function parseQuizJSON(content: string): QuizData | null {
     // Validate and transform questions
     const questions = parsed.questions
       .map((q: any, idx: number): QuizQuestion | null => {
-        if (!q.text) return null;
+        if (!q.text && !q.question) return null;
 
         const type = (q.type || "mcq") as QuestionType;
 
@@ -49,7 +55,7 @@ export function parseQuizJSON(content: string): QuizData | null {
           id: `q-${idx}`,
           number: q.number || idx + 1,
           type,
-          text: q.text,
+          text: q.text || q.question, // handle both field names
         };
 
         // Add options if MCQ
@@ -59,8 +65,8 @@ export function parseQuizJSON(content: string): QuizData | null {
           Array.isArray(q.options)
         ) {
           question.options = q.options.map((opt: any, optIdx: number) => ({
-            id: opt.id || String.fromCharCode(65 + optIdx), // A, B, C, D
-            text: opt.text || "",
+            id: opt.id || opt.label || String.fromCharCode(65 + optIdx),
+            text: opt.text || opt.value || String(opt),
           }));
         }
 
@@ -94,8 +100,9 @@ export function parseQuizJSON(content: string): QuizData | null {
  * C) Option C
  * D) Option D
  *
- * Q2. Another question?
- * ...
+ * Also handles:
+ * 1. What is...?
+ * **1.** What is...?
  */
 export function parseQuizMarkdown(content: string): QuizData | null {
   try {
@@ -107,9 +114,11 @@ export function parseQuizMarkdown(content: string): QuizData | null {
     for (const line of lines) {
       const trimmed = line.trim();
 
-      // Detect question start (Q1, Q2, etc.)
-      const qMatch = trimmed.match(/^Q?\d+[\.\)]\s*(.+)$/i);
-      if (qMatch) {
+      // Detect question start — multiple patterns
+      const qMatch = trimmed.match(
+        /^(?:\*\*)?Q?\s*(\d+)[\.\)\:]?\s*\**\s*(.+)$/i
+      );
+      if (qMatch && qMatch[2]) {
         // Save previous question if exists
         if (currentQuestion) {
           if (currentOptions.length > 0) {
@@ -124,20 +133,20 @@ export function parseQuizMarkdown(content: string): QuizData | null {
         currentQuestion = {
           id: `q-${questions.length}`,
           number: questions.length + 1,
-          text: qMatch[1],
+          text: qMatch[2].replace(/\*\*/g, "").trim(),
           type: "mcq",
         };
         currentOptions = [];
         continue;
       }
 
-      // Detect options (A), B), A., etc.)
-      const optMatch = trimmed.match(/^[A-D][\.)\]]\s*(.+)$/);
+      // Detect options (A), B), A., A:, etc.)
+      const optMatch = trimmed.match(/^(?:\*\*)?([A-D])[\.)\]\:]\s*\**\s*(.+)$/);
       if (optMatch && currentQuestion) {
-        const optionId = trimmed[0].toUpperCase();
+        const optionId = optMatch[1].toUpperCase();
         currentOptions.push({
           id: optionId,
-          text: optMatch[1],
+          text: optMatch[2].replace(/\*\*/g, "").trim(),
         });
         continue;
       }
@@ -181,6 +190,6 @@ export function parseQuizResponse(content: string): QuizData | null {
     return parsed;
   }
 
-  console.warn("[Quiz] Could not parse quiz response");
+  console.warn("[Quiz] Could not parse quiz response. Content preview:", content.slice(0, 200));
   return null;
 }

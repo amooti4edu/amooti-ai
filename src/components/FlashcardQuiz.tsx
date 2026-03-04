@@ -20,6 +20,8 @@ interface FlashcardQuizProps {
   onNext: () => void;
   onPrevious: () => void;
   onSubmit: () => void;
+  onNavigate: (index: number) => void;
+  onClose: () => void;
   isSubmitting?: boolean;
 }
 
@@ -29,6 +31,8 @@ export function FlashcardQuiz({
   onNext,
   onPrevious,
   onSubmit,
+  onNavigate,
+  onClose,
   isSubmitting = false,
 }: FlashcardQuizProps) {
   const { questionSet, currentIndex, studentAnswers, isSubmitted, results } =
@@ -45,6 +49,12 @@ export function FlashcardQuiz({
 
   return (
     <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
+      {/* Close button */}
+      <div className="flex justify-end">
+        <button onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground underline">
+          ← Back to chat
+        </button>
+      </div>
       {/* Progress bar */}
       <div className="space-y-2">
         <div className="flex justify-between text-sm text-muted-foreground">
@@ -142,21 +152,18 @@ export function FlashcardQuiz({
 
       {/* Answer status indicator */}
       <div className="flex gap-2 flex-wrap">
-        {questionSet.map((q, idx) => {
+      {questionSet.map((q, idx) => {
           const hasAnswer = studentAnswers.some((a) => a.questionId === q.id);
           return (
             <button
               key={q.id}
-              onClick={() => {
-                // Navigate to this question
-                // This would require parent to pass navigation callback
-              }}
+              onClick={() => onNavigate(idx)}
               className={`w-10 h-10 rounded flex items-center justify-center text-sm font-semibold transition-colors ${
                 idx === currentIndex
-                  ? "border-2 border-primary bg-primary/10"
+                  ? "border-2 border-primary bg-primary/10 text-primary"
                   : hasAnswer
-                    ? "bg-green-100 text-green-700"
-                    : "bg-gray-100 text-gray-500"
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground"
               }`}
             >
               {idx + 1}
