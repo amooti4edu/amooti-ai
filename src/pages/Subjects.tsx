@@ -9,7 +9,7 @@ const Subjects = () => {
     "Chemistry",
     "Physics",
     "General Science",
-    "History and Political Education",
+    "History and Political Education (H&P)",
     "Geography",
   ];
 
@@ -21,7 +21,7 @@ const Subjects = () => {
     "Chemistry",
     "Physics",
     "General Science",
-    "History and Political Education",
+    "History and Political Education (H&P)",
     "Geography",
 
     // Electives
@@ -76,7 +76,7 @@ const Subjects = () => {
       {/* Main Content */}
       <div className="px-6 py-16 md:px-12 lg:px-20 max-w-6xl mx-auto">
         <h1 className="text-4xl md:text-5xl font-serif tracking-wide mb-6 text-secondary">
-          Lower Secondary Curriculum (S1–S4)
+          PHASE 1: Lower Secondary Curriculum (S1–S4)
         </h1>
 
         {/* Curriculum Explanation */}
