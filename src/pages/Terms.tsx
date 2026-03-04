@@ -43,7 +43,9 @@ const Terms = () => {
                 1. Acceptance of Terms
               </h2>
               <p>
-                By accessing and using Amooti, you agree to comply with these Terms of Service and all applicable laws and regulations. Amooti is an AI-powered study companion designed specifically for students across Africa. If you do not agree to these terms, you may not use our service.
+                By accessing and using Amooti, you agree to comply with these Terms of Service and all applicable 
+                laws and regulations. Amooti is an AI-powered study companion designed specifically 
+                for students in Uganda. If you do not agree to these terms, you may not use our service.
               </p>
             </section>
 
@@ -52,7 +54,10 @@ const Terms = () => {
                 2. Use License and Restrictions
               </h2>
               <p>
-                Amooti grants you a limited, non-exclusive, non-transferable license to use our service for personal, educational, non-commercial purposes only. You agree to use Amooti solely to develop your own educational knowledge and understanding. You may not:
+                Amooti grants you a limited, non-exclusive, non-transferable license to use our service for personal,
+                educational, non-commercial purposes only. 
+                You agree to use Amooti solely to develop your own educational knowledge and understanding. 
+                You may not:
               </p>
               <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
                 <li>Reproduce, distribute, or transmit any content without written permission</li>
@@ -68,7 +73,10 @@ const Terms = () => {
                 3. AI-Generated Content Disclaimer
               </h2>
               <p>
-                Amooti uses artificial intelligence to generate educational responses and study materials. While we strive to provide accurate and helpful content, AI-generated materials may contain errors, omissions, or limitations. We recommend:
+                Amooti uses artificial intelligence to generate educational responses and study materials. 
+                While we strive to provide accurate and helpful content, 
+                AI-generated materials may contain errors, omissions, or limitations. 
+                We recommend:
               </p>
               <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
                 <li>Verifying important information with your textbooks and teacher</li>
@@ -82,13 +90,8 @@ const Terms = () => {
                 4. Usage Limits and Fair Use
               </h2>
               <p>
-                Your access to Amooti is subject to daily usage limits based on your subscription tier:
+                Your access to Amooti is subject to daily usage limits based on your subscription tier.
               </p>
-              <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
-                <li><strong>Free Plan:</strong> Limited questions per day across 8 subjects</li>
-                <li><strong>Basic Plan:</strong> Unlimited questions across all subjects</li>
-                <li><strong>Premium Plan:</strong> Unlimited questions with additional features</li>
-              </ul>
               <p className="mt-3">
                 We may suspend access to students who abuse the service or attempt to circumvent usage limits.
               </p>
@@ -99,7 +102,10 @@ const Terms = () => {
                 5. Limitation of Liability
               </h2>
               <p>
-                To the maximum extent permitted by law, Amooti and its creators shall not be liable for any indirect, incidental, special, or consequential damages resulting from your use or inability to use the service. This includes, but is not limited to, lost grades, academic performance issues, or any other damages whether based on warranty, contract, tort, or any other legal theory.
+                To the maximum extent permitted by law, Amooti and its creators shall not be liable for any 
+                indirect, incidental, special, or consequential damages resulting from your use or inability 
+                to use the service. This includes, but is not limited to, lost grades, academic performance issues, 
+                or any other damages whether based on warranty, contract, tort, or any other legal theory.
               </p>
             </section>
 
@@ -108,7 +114,11 @@ const Terms = () => {
                 6. Academic Integrity
               </h2>
               <p>
-                You agree to use Amooti in accordance with your school's academic integrity policies. Amooti is designed to help you learn and understand concepts. Submitting AI-generated responses as your own work without proper attribution or understanding may violate your institution's honor code. We recommend discussing appropriate use of AI tools with your teachers.
+                You agree to use Amooti in accordance with your school's academic integrity policies. 
+                Amooti is designed to help you learn and understand concepts. 
+                Submitting AI-generated responses as your own work without proper attribution or understanding 
+                may violate your institution's honor code. We recommend discussing appropriate 
+                use of AI tools with your teachers.
               </p>
             </section>
 
@@ -117,7 +127,9 @@ const Terms = () => {
                 7. Changes to Terms
               </h2>
               <p>
-                Amooti reserves the right to modify these Terms of Service at any time. Changes will be effective immediately upon posting to the website. Your continued use of the service constitutes acceptance of the updated terms.
+                Amooti reserves the right to modify these Terms of Service at any time. 
+                Changes will be effective immediately upon posting to the website. 
+                Your continued use of the service constitutes acceptance of the updated terms.
               </p>
             </section>
           </div>
@@ -127,7 +139,7 @@ const Terms = () => {
       {/* Footer */}
       <footer className="border-t bg-gray-50 px-6 py-8 md:px-12 lg:px-20 mt-12">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-6">
-          <p className="text-gray-600 text-sm">© 2026 Amooti. All rights reserved.</p>
+          <p className="text-gray-600 text-sm">© 2026 Domus Dei Tech | Amooti. All rights reserved.</p>
           <div className="flex gap-6 text-sm">
             <Link to="/terms" className="text-secondary hover:opacity-80">
               Terms of Service
