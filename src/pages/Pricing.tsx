@@ -16,7 +16,7 @@ const Pricing = () => {
     },
     {
       name: "Basic",
-      price: "7,000 UGX",
+      price: "7,000 UGX / month",
       description: "Comprehesive student support",
       features: [
         "All the features in free",
@@ -26,7 +26,7 @@ const Pricing = () => {
     },
     {
       name: "Premium",
-      price: "15,000 UGX",
+      price: "15,000 UGX / month",
       description: "Advanced student and teacher support",
       features: [
         "All the features in basic",
