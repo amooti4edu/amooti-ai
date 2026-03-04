@@ -95,19 +95,15 @@ export default function Chat() {
     if (!session) return;
     supabase
       .from("profiles")
-      .select("*")
-      .eq("user_id", session.user.id)
+      .select("tier, subject, class")
+      .eq("id", session.user.id)
       .single()
       .then(({ data }) => {
         if (data) {
-          // tier column may not exist yet (pending migration) — default to free
-          const tier = (data as any)?.tier as Tier | undefined;
-          setUserTier(tier ?? "free");
-          // Also fetch subject and class if available
-          const sub = (data as any)?.subject as string | undefined;
-          const cls = (data as any)?.class as string | undefined;
-          if (sub) setSubject(sub);
-          if (cls) setUserClass(cls);
+          const d = data as any;
+          setUserTier((d.tier as Tier) ?? "free");
+          if (d.subject) setSubject(d.subject);
+          if (d.class) setUserClass(d.class);
         }
       });
   }, [session]);
