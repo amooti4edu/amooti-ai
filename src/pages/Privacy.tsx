@@ -77,7 +77,10 @@ const Privacy = () => {
                 3. Data Processing and AI Learning
               </h2>
               <p>
-                Your learning interactions and questions may be processed by our AI systems to improve the accuracy and relevance of responses we provide. We anonymize and aggregate this data whenever possible. Your personal information is not used to train AI models without your explicit consent.
+                Your learning interactions and questions may be processed by our AI systems to 
+                improve the accuracy and relevance of responses we provide. 
+                We anonymize and aggregate this data whenever possible. 
+                Your personal information is not used to train AI models without your explicit consent.
               </p>
             </section>
 
@@ -89,7 +92,7 @@ const Privacy = () => {
                 We do not sell or rent your personal information to third parties. We may share information in the following limited circumstances:
               </p>
               <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
-                <li>With service providers who help operate Amooti (e.g., Supabase for data storage)</li>
+                <li>With service providers who help operate Amooti (e.g., for data storage)</li>
                 <li>As required by law or government request</li>
                 <li>If necessary to protect our legal rights or the safety of our users</li>
                 <li>With institutional partners if you use Amooti through a school (for enterprise users)</li>
@@ -101,7 +104,9 @@ const Privacy = () => {
                 5. Data Security
               </h2>
               <p>
-                We implement industry-standard security measures to protect your personal information, including encryption in transit and at rest. Supabase, our backend service provider, maintains comprehensive security protocols. However, no security system is completely impenetrable, and we cannot guarantee absolute security.
+                We implement industry-standard security measures to protect your personal information, 
+                including encryption in transit and at rest. we maintain comprehensive security protocols. 
+                However, no security system is completely impenetrable, and we cannot guarantee absolute security.
               </p>
             </section>
 
@@ -110,7 +115,10 @@ const Privacy = () => {
                 6. Data Retention
               </h2>
               <p>
-                We retain your account information as long as you maintain an active account. Learning data and chat history are retained to maintain your progress and conversation context. When you delete your account, we permanently delete your personal information within 30 days, though anonymized data may be retained for service improvement.
+                We retain your account information as long as you maintain an active account. 
+                Learning data and chat history are retained to maintain your progress and conversation context. 
+                When you delete your account, we permanently delete your personal information within 30 days, 
+                though anonymized data may be retained for service improvement.
               </p>
             </section>
 
@@ -122,14 +130,14 @@ const Privacy = () => {
                 You have the right to:
               </p>
               <ul className="list-disc list-inside space-y-2 mt-2 text-gray-700">
-                <li>Access your personal information and request a copy of your data</li>
+                <li>Access your personal information</li>
                 <li>Update or correct your profile information</li>
                 <li>Delete your account and associated data</li>
                 <li>Opt out of non-essential communications</li>
                 <li>Request information about how your data is being used</li>
               </ul>
               <p className="mt-3">
-                To exercise these rights, please contact us at support@amooti.ai
+                To exercise these rights, please contact us at amooti4edu@gmail.com
               </p>
             </section>
 
@@ -138,7 +146,10 @@ const Privacy = () => {
                 8. Children's Privacy
               </h2>
               <p>
-                Amooti is designed for students of various ages. If you are under 18, please ensure you have parental consent before using our service. We comply with applicable children's privacy laws and do not knowingly collect excessive personal information from minors without appropriate safeguards.
+                Amooti is designed for students of various ages. 
+                If you are under 18, please ensure you have parental consent before using our service. 
+                We comply with applicable children's privacy laws and do not 
+                knowingly collect excessive personal information from minors without appropriate safeguards.
               </p>
             </section>
 
@@ -147,7 +158,10 @@ const Privacy = () => {
                 9. Changes to This Policy
               </h2>
               <p>
-                We may update this Privacy Policy periodically to reflect changes in our practices or applicable laws. We will notify you of significant changes by posting the updated policy on our website and, where appropriate, by email. Your continued use of Amooti constitutes acceptance of the updated Privacy Policy.
+                We may update this Privacy Policy periodically to reflect changes in our 
+                practices or applicable laws. We will notify you of significant changes 
+                by posting the updated policy on our website and, where appropriate, by email. 
+                Your continued use of Amooti constitutes acceptance of the updated Privacy Policy.
               </p>
             </section>
           </div>
@@ -157,7 +171,7 @@ const Privacy = () => {
       {/* Footer */}
       <footer className="border-t bg-gray-50 px-6 py-8 md:px-12 lg:px-20 mt-12">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-6">
-          <p className="text-gray-600 text-sm">© 2026 Amooti. All rights reserved.</p>
+          <p className="text-gray-600 text-sm">© 2026 Domus Dei Tech | Amooti. All rights reserved.</p>
           <div className="flex gap-6 text-sm">
             <Link to="/terms" className="text-secondary hover:opacity-80">
               Terms of Service
