@@ -609,7 +609,7 @@ export default function Chat() {
         <header className="flex items-center gap-3 border-b px-4 py-3">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="rounded-md p-1.5 hover:bg-muted lg:hidden"
+            className="rounded-md p-1.5 hover:bg-muted"
           >
             <Menu size={20} />
           </button>
