@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import type {
@@ -195,7 +194,7 @@ function QuizResultsView({
   return (
     <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
       {/* Score summary */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+      <Card className="border-primary/20 bg-primary/5">
         <CardHeader>
           <CardTitle>Quiz Results</CardTitle>
         </CardHeader>
@@ -210,74 +209,72 @@ function QuizResultsView({
                 {results.correctAnswers} out of {totalQuestions} correct
               </p>
             </div>
-            <div className={`text-6xl ${scoreColor}`}>
+            <div className={`${scoreColor}`}>
               {results.score >= 80 ? (
-                <CheckCircle2 size={80} />
+                <CheckCircle2 size={64} />
               ) : results.score >= 60 ? (
-                <AlertCircle size={80} />
+                <AlertCircle size={64} />
               ) : (
-                <XCircle size={80} />
+                <XCircle size={64} />
               )}
             </div>
           </div>
-
-          <Textarea
-            readOnly
-            value={results.explanation}
-            className="mt-4 h-24 text-sm"
-          />
         </CardContent>
       </Card>
 
       {/* Corrections */}
-      <div className="space-y-3">
-        <h3 className="font-semibold text-lg">Corrections & Feedback</h3>
-        {results.corrections.map((correction, idx) => (
-          <Card
-            key={idx}
-            className={
-              correction.isCorrect
-                ? "border-green-200 bg-green-50"
-                : "border-red-200 bg-red-50"
-            }
-          >
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    Question {correction.questionNumber}
-                  </p>
-                  <p className="font-medium">{correction.question}</p>
+      {results.corrections.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-lg">Corrections & Feedback</h3>
+          {results.corrections.map((correction, idx) => (
+            <Card
+              key={idx}
+              className={
+                correction.isCorrect
+                  ? "border-green-500/30 bg-green-500/5"
+                  : "border-destructive/30 bg-destructive/5"
+              }
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-muted-foreground">
+                      Question {correction.questionNumber}
+                    </p>
+                    <p className="font-medium">{correction.question}</p>
+                  </div>
+                  {correction.isCorrect ? (
+                    <CheckCircle2 className="text-green-600 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="text-destructive flex-shrink-0" />
+                  )}
                 </div>
-                {correction.isCorrect ? (
-                  <CheckCircle2 className="text-green-600 flex-shrink-0" />
-                ) : (
-                  <XCircle className="text-red-600 flex-shrink-0" />
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Your answer:</p>
+                  <p className="font-mono bg-muted p-2 rounded">
+                    {correction.studentAnswer}
+                  </p>
+                </div>
+                {!correction.isCorrect && (
+                  <div>
+                    <p className="text-muted-foreground">Correct answer:</p>
+                    <p className="font-mono bg-green-500/10 p-2 rounded text-green-700 dark:text-green-400">
+                      {correction.correctAnswer}
+                    </p>
+                  </div>
                 )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div>
-                <p className="text-muted-foreground">Your answer:</p>
-                <p className="font-mono bg-white/50 p-2 rounded">
-                  {correction.studentAnswer}
-                </p>
-              </div>
-              {!correction.isCorrect && (
-                <div>
-                  <p className="text-muted-foreground">Correct answer:</p>
-                  <p className="font-mono bg-white/50 p-2 rounded text-green-700">
-                    {correction.correctAnswer}
-                  </p>
-                </div>
-              )}
-              <div className="bg-white/50 p-2 rounded border-l-2 border-blue-500">
-                <p className="text-sm">{correction.explanation}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                {correction.explanation && (
+                  <div className="bg-muted/50 p-2 rounded border-l-2 border-primary">
+                    <p className="text-sm">{correction.explanation}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
