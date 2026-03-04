@@ -365,26 +365,35 @@ export type Database = {
       }
       profiles: {
         Row: {
+          class: string | null
           created_at: string
           display_name: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
+          subject: string | null
+          tier: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          class?: string | null
           created_at?: string
           display_name?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          subject?: string | null
+          tier?: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          class?: string | null
           created_at?: string
           display_name?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          subject?: string | null
+          tier?: string
           updated_at?: string
           user_id?: string
         }
@@ -392,19 +401,28 @@ export type Database = {
       }
       rate_limits: {
         Row: {
+          burst_count: number
+          daily_count: number
           id: string
+          last_day: string | null
           request_count: number
           user_id: string
           window_start: string
         }
         Insert: {
+          burst_count?: number
+          daily_count?: number
           id?: string
+          last_day?: string | null
           request_count?: number
           user_id: string
           window_start?: string
         }
         Update: {
+          burst_count?: number
+          daily_count?: number
           id?: string
+          last_day?: string | null
           request_count?: number
           user_id?: string
           window_start?: string
