@@ -12,6 +12,8 @@ import { DailyLimitBadge } from "@/components/DailyLimitBadge";
 import { TeacherResponse } from "@/components/TeacherResponse";
 import { FlashcardQuiz } from "@/components/FlashcardQuiz";
 import { parseQuizResponse } from "@/lib/quiz-parser";
+import { parseGradingResponse } from "@/lib/grading-parser";
+import { QuizLoadingOverlay } from "@/components/QuizLoadingOverlay";
 import type {
   Message,
   ChatMode,
@@ -65,6 +67,7 @@ export default function Chat() {
 
   // Quiz state
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
+  const [quizLoading, setQuizLoading] = useState(false);
 
   const bottomRef      = useRef<HTMLDivElement>(null!);
   const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
