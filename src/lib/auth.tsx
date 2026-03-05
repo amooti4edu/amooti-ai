@@ -9,6 +9,8 @@ interface Profile {
   tier: string;
   subject: string | null;
   class: string | null;
+  onboarding_completed?: boolean;
+  term?: string | null;
 }
 
 interface AuthContextType {
@@ -33,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
       .from("profiles")
-      .select("id, display_name, role, tier, subject, class")
+      .select("id, display_name, role, tier, subject, class, onboarding_completed, term")
       .eq("id", userId)
       .single();
     if (data) setProfile(data as unknown as Profile);
@@ -63,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, role: "student" | "school", displayName?: string) => {
+  const signUp = async (email: string, password: string, role: "student" | "teacher" | "school", displayName?: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,

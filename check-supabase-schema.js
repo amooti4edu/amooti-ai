@@ -56,7 +56,7 @@ async function main() {
 
   // Check profiles table
   console.log("📋 Checking profiles table...");
-  const profileCols = ["id", "user_id", "tier", "role", "subject", "class"];
+  const profileCols = ["id", "tier", "role", "subject", "class", "display_name", "onboarding_completed", "term"];
   let profileExists = false;
   let profileFoundCols = [];
   
@@ -72,10 +72,11 @@ async function main() {
     console.log(`✅ profiles table exists`);
     console.log(`   Found columns: ${profileFoundCols.join(", ")}`);
     
-    const requiredFields = ["id", "user_id", "tier", "role"];
-    const optionalFields = ["subject", "class"];
+    const requiredFields = ["id", "tier", "role"];
+    const onboardingFields = ["onboarding_completed", "class", "term"];
+    const optionalFields = ["subject", "display_name"];
     
-    console.log("   Required fields check:");
+    console.log("   Required fields:");
     for (const field of requiredFields) {
       if (profileFoundCols.includes(field)) {
         console.log(`   ✅ ${field}`);
@@ -84,12 +85,21 @@ async function main() {
       }
     }
     
+    console.log("   Onboarding fields:");
+    for (const field of onboardingFields) {
+      if (profileFoundCols.includes(field)) {
+        console.log(`   ✅ ${field}`);
+      } else {
+        console.log(`   ⚠️  ${field} not found (needed for onboarding)`);
+      }
+    }
+    
     console.log("   Optional fields:");
     for (const field of optionalFields) {
       if (profileFoundCols.includes(field)) {
-        console.log(`   ℹ️  ${field} exists`);
+        console.log(`   ℹ️  ${field}`);
       } else {
-        console.log(`   ⚠️  ${field} not found (recommended)`);
+        console.log(`   ℹ️  ${field} not found`);
       }
     }
   } else {
@@ -152,6 +162,35 @@ async function main() {
     }
   } else {
     console.log(`❌ conversations table NOT FOUND or no accessible columns`);
+  }
+
+  // Check subscriptions table (NEW for billing)
+  console.log("\n📋 Checking subscriptions table...");
+  const subCols = ["id", "user_id", "tier", "status", "current_period_start", "current_period_end", "created_at", "updated_at"];
+  let subFoundCols = [];
+  
+  for (const col of subCols) {
+    const exists = await checkColumn("subscriptions", col);
+    if (exists) {
+      subFoundCols.push(col);
+    }
+  }
+
+  if (subFoundCols.length > 0) {
+    console.log(`✅ subscriptions table exists`);
+    console.log(`   Found columns: ${subFoundCols.join(", ")}`);
+    
+    const requiredFields = ["id", "user_id", "tier", "status", "current_period_start", "current_period_end"];
+    console.log("   Required fields:");
+    for (const field of requiredFields) {
+      if (subFoundCols.includes(field)) {
+        console.log(`   ✅ ${field}`);
+      } else {
+        console.log(`   ❌ ${field} MISSING`);
+      }
+    }
+  } else {
+    console.log(`⚠️  subscriptions table NOT FOUND (needed for billing - create during migration)`);
   }
 
   // Check messages table
@@ -218,6 +257,31 @@ async function main() {
     } catch (err) {
       console.log(`⚠️  Could not check /functions/v1/${fnc.name}: ${err.message}`);
     }
+  }
+
+  // Summary
+  console.log("\n📊 ONBOARDING READINESS SUMMARY:");
+  console.log("================================");
+  
+  let ready = true;
+  if (!profileFoundCols.includes("onboarding_completed") || !profileFoundCols.includes("class") || !profileFoundCols.includes("term")) {
+    console.log("⚠️  Missing profile fields for onboarding:");
+    if (!profileFoundCols.includes("onboarding_completed")) console.log("    - onboarding_completed");
+    if (!profileFoundCols.includes("class")) console.log("    - class");
+    if (!profileFoundCols.includes("term")) console.log("    - term");
+    ready = false;
+  }
+  
+  if (subFoundCols.length === 0) {
+    console.log("⚠️  subscriptions table not yet created (needed for billing)");
+    ready = false;
+  }
+  
+  if (ready) {
+    console.log("✅ All core tables and columns exist!");
+    console.log("✅ Ready to build onboarding flow");
+  } else {
+    console.log("❌ Some migrations still needed before implementing onboarding");
   }
 
   console.log("\n✨ Schema check complete!");
