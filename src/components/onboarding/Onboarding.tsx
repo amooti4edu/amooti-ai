@@ -52,7 +52,14 @@ export default function Onboarding({ onComplete, isDevelopment = false }: Onboar
       if (error) throw error;
 
       setFormData({ ...formData, role });
-      setStep('class');
+      
+      // Only go to class selection for students
+      // Teachers and schools skip directly to tier selection
+      if (role === 'student') {
+        setStep('class');
+      } else {
+        setStep('tier');
+      }
     } catch (error: any) {
       toast({
         title: 'Error',
