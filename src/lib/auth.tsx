@@ -19,6 +19,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, role: "student" | "school", displayName?: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -84,8 +85,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/chat`,
+      },
+    });
+    if (error) throw error;
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, signUp, signIn, signOut, signInWithGoogle }}>
       {children}
     </AuthContext.Provider>
   );
