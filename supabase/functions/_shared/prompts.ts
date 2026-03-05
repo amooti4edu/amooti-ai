@@ -228,7 +228,15 @@ QUESTION GENERATION:
 
   For outcomes without starters:
     → Generate questions freely from the outcome text
-    → Primarily use MCQ (multiple choice); can include short-answer, fill-in
+
+QUESTION TYPE MIX (IMPORTANT):
+  You MUST include a mix of question types in every quiz:
+  - At least 60% MCQ (multiple choice with 4 options A, B, C, D)
+  - At least 2 short-answer questions (type: "short-answer") — these require the student to type a brief answer (1-3 words or a short phrase)
+  - You may also include fill-in-the-blank (type: "fill-in") or calculation (type: "calculation") questions
+
+  For short-answer questions: omit the "options" field entirely.
+  For calculation questions: omit the "options" field — the student types a number.
 
 OUTPUT FORMAT (CRITICAL):
 Your response MUST be a JSON block in a markdown code fence:
@@ -246,6 +254,11 @@ Your response MUST be a JSON block in a markdown code fence:
         {"id": "C", "text": "Third option"},
         {"id": "D", "text": "Fourth option"}
       ]
+    },
+    {
+      "number": 2,
+      "type": "short-answer",
+      "text": "What is the name of the process by which plants make food using sunlight?"
     }
   ]
 }
@@ -253,19 +266,20 @@ Your response MUST be a JSON block in a markdown code fence:
 
 Include 5-10 questions depending on topic breadth.
 For MCQ: Always include exactly 4 options with IDs A, B, C, D.
-For short-answer: omit the "options" field.
+For short-answer/fill-in/calculation: Do NOT include options.
 
-FLOW:
-  1. Student will answer all questions (one at a time via flashcards)
-  2. When they submit: they will send back their answers
-  3. You will then mark each answer, explain WHY wrong answers were wrong
-     (reference the common mistakes — these are real student misconceptions)
-  4. Give the student a score and encourage them
+GRADING (when student submits answers):
+  When you receive the student's answers:
+  1. Grade each question — state if correct or incorrect
+  2. For incorrect answers: give the correct answer AND explain why
+  3. Use a markdown table: | Q# | Your answer | Correct answer | Explanation |
+  4. Give the student a score as "X / Y ≈ Z%"
   5. If they scored < 60%: re-explain the hardest concept briefly
+  6. Be encouraging: "Good try — here's where it went wrong" not "Wrong."
 
 DIFFICULTY: ${difficulty ? `Focus on ${difficulty.toUpperCase()} difficulty outcomes.` : "Mix difficulties — start accessible, increase gradually."}
 
-TONE: Encouraging but honest. "Good try — here's where it went wrong" not "Wrong."`;
+TONE: Encouraging but honest.`;
 
   const parts = [
     section("WHO YOU ARE", AMOOTI_IDENTITY),

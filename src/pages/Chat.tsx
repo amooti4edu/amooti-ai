@@ -408,9 +408,10 @@ export default function Chat() {
       const quizData = parseQuizResponse(assistantContent);
       setQuizLoading(false);
       if (quizData && quizData.questions.length > 0) {
+        // IMPORTANT: Store the full quiz content so the grading model can see the questions
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: `📝 Quiz ready! ${quizData.questions.length} questions loaded.` },
+          { role: "assistant", content: assistantContent },
         ]);
         setQuizSession({
           questionSet: quizData.questions,
@@ -501,17 +502,20 @@ export default function Chat() {
     startLoadingPhrases(THINKING_PHRASES);
 
     try {
-      // Get the student's answers
-      const answersText = quizSession.studentAnswers
-        .map((a) => {
-          const q = quizSession.questionSet.find((q) => q.id === a.questionId);
-          return `Q${q?.number}: ${a.answer}`;
-        })
-        .join("\n");
+      // Build a detailed grading request that includes BOTH questions AND answers
+      const answersWithQuestions = quizSession.questionSet.map((q) => {
+        const studentAns = quizSession.studentAnswers.find((a) => a.questionId === q.id);
+        let questionText = `Q${q.number}. ${q.text}`;
+        if (q.options) {
+          questionText += "\n" + q.options.map((o) => `  ${o.id}) ${o.text}`).join("\n");
+        }
+        questionText += `\nStudent's answer: ${studentAns?.answer ?? "(no answer)"}`;
+        return questionText;
+      }).join("\n\n");
 
       const quizResultMessage: Message = {
         role: "user",
-        content: `Here are my answers to the quiz:\n\n${answersText}\n\nPlease grade them and provide feedback.`,
+        content: `Here are the quiz questions and my answers. Please grade each one, tell me which are correct/incorrect, give the correct answer for wrong ones, and explain why.\n\n${answersWithQuestions}`,
       };
 
       const allMessages = [...messages, quizResultMessage];
