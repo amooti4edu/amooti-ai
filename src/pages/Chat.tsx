@@ -30,13 +30,21 @@ import "highlight.js/styles/github.css";
 const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
 
 const THINKING_PHRASES = [
-  "Thinking…",
-  "Checking the syllabus…",
-  "Putting it together…",
-  "Almost there…",
+  "Thinking...",
+  "planning research...",
+  "Checking the syllabus...",
+  "Validating findings...",
+  "Putting it all together...",
+  "Almost there...",
+  "Almost there...",
+  "Almost there...",
 ];
 
 const TEACHER_PHRASES = [
+  "Thinking...",
+  "planning research...",
+  "Checking the syllabus...",
+  "Validating findings...",
   "Generating your document…",
   "Building lesson content…",
   "Formatting materials…",
