@@ -17,18 +17,18 @@ const SUBJECTS: { label: string; accent: string }[] = [
 
 // Schools: just the name — each becomes its own individual card
 const SCHOOLS: string[] = [
-  "Uganda Martyrs High School Rubaga",
-  "Makerere College School",
-  "Gayaza High School",
-  "St. Mary's Seminary FortPortal",
-  "St. Mary's College Kisubi",
-  "Ntare School",
-  "Nabisunsa Girls School",
-  "Mwiri Secondary School",
-  "Namilyango College",
-  "Kibuli Secondary School",
-  "St. Joseph's College Layibi",
-  "Kyambogo College School",
+//  "Uganda Martyrs High School Rubaga",
+//  "Makerere College School",
+//  "Gayaza High School",
+//  "St. Mary's Seminary FortPortal",
+//  "St. Mary's College Kisubi",
+//  "Ntare School",
+//  "Nabisunsa Girls School",
+//  "Mwiri Secondary School",
+//  "Namilyango College",
+//  "Kibuli Secondary School",
+//  "St. Joseph's College Layibi",
+//  "Kyambogo College School",
 ];
 
 // ─────────────────────────────────────────────
@@ -153,14 +153,18 @@ const Index = () => {
 
       {/* ── Footer — plain, no glass ── */}
       <footer className="relative z-10 px-6 py-6 md:px-12 lg:px-20">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="max-w-6xl mx-auto flex flex-col items-center text-center gap-2">
+      
+          <div className="text-sm">
+            <Link to="/terms" className="nav-link-hero">Terms of Service</Link>
+            <span className="mx-2">|</span>
+            <Link to="/privacy" className="nav-link-hero">Privacy Policy</Link>
+          </div>
+      
           <p className="text-hero text-sm opacity-70">
             © 2026 Domus Dei Tech | Amooti. All rights reserved.
           </p>
-          <div className="flex gap-6 text-sm">
-            <Link to="/terms"   className="nav-link-hero">Terms of Service</Link>
-            <Link to="/privacy" className="nav-link-hero">Privacy Policy</Link>
-          </div>
+      
         </div>
       </footer>
     </div>
