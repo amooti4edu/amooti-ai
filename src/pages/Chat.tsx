@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
+import Onboarding from "@/components/onboarding/Onboarding";
+import ProfileEditor from "@/components/ProfileEditor";
 import { ChatMessages } from "@/components/ChatMessages";
 import { ChatInput } from "@/components/ChatInput";
 import { ChatSidebar } from "@/components/ChatSidebar";
@@ -51,7 +53,47 @@ const TEACHER_PHRASES = [
   "Almost ready…",
 ];
 
+/**
+ * Chat page component wrapped with onboarding protection.
+ * If user hasn't completed onboarding, shows Onboarding flow.
+ */
 export default function Chat() {
+  const { session, profile, loading } = useAuth();
+  const navigate = useNavigate();
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+
+  // Auth redirect
+  useEffect(() => {
+    if (!loading && !session) navigate("/");
+  }, [session, loading, navigate]);
+
+  // Show loading
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-900">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  // Check if onboarding is needed
+  if (!profile?.onboarding_completed && !onboardingComplete) {
+    return (
+      <Onboarding
+        onComplete={() => setOnboardingComplete(true)}
+        isDevelopment={true}
+      />
+    );
+  }
+
+  // Onboarding complete - show chat
+  return <ChatContent />;
+}
+
+/**
+ * Actual chat implementation (was previously the default export)
+ */
+function ChatContent() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -647,8 +689,9 @@ export default function Chat() {
             <Menu size={20} />
           </button>
           <h1 className="font-serif text-lg font-semibold text-foreground">Amooti</h1>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <DailyLimitBadge tier={userTier} used={dailyUsed} />
+            <ProfileEditor />
           </div>
         </header>
 
