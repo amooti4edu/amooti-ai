@@ -146,8 +146,9 @@ const Index = () => {
 
         <div className="carousel-label">Subjects</div>
         <SubjectRow items={SUBJECTS} direction="left" />
-
-        <div className="carousel-label mt-2">Our Schools</div>
+        
+        {/*
+        <div className="carousel-label mt-2">Our Schools</div> */}
         <SchoolRow items={SCHOOLS} direction="right" />
       </div>
 
