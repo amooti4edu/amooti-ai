@@ -37,8 +37,8 @@ export default function ProfileEditor() {
     if (profile) {
       setFormData({
         display_name: profile.display_name || '',
-        class: profile.class || '',
-        term: profile.term || '',
+        class: profile.class || 'none',
+        term: profile.term || 'none',
       });
     }
   }, [profile, isOpen]);
