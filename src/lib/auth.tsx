@@ -98,11 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  return (
   const refreshProfile = async () => {
     if (user) await fetchProfile(user.id);
   };
 
+  return (
     <AuthContext.Provider value={{ session, user, profile, loading, signUp, signIn, signOut, signInWithGoogle, refreshProfile }}>
       {children}
     </AuthContext.Provider>
