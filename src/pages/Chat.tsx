@@ -585,7 +585,8 @@ function ChatContent() {
         },
         body: JSON.stringify({
           messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
-          mode: "quiz", // Still in quiz mode for grading
+          mode: "quiz",
+          grading: true, // Skip embedding — just grade the answers
           ...(difficulty ? { difficulty } : {}),
           ...(subject ? { subject } : {}),
           ...(userClass ? { class: userClass } : {}),
