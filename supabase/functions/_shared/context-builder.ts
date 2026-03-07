@@ -1,22 +1,58 @@
 // ============================================================================
 //  context-builder.ts
-//  Assembles curriculum context from Supabase before the LLM call.
-//  Three modes — each calls a different combination of RPCs.
-//  Context is always built first. Tools are a fallback only.
+//  Assembles curriculum context from Qdrant + Supabase before the LLM call.
+//
+//  Search architecture:
+//    1. embedQuery()  — BGE-M3 dense vector via embedding.ts
+//    2. Qdrant        — semantic topic search (dense, with retry + timeout)
+//    3. Supabase RPCs — full structured context, edges, quiz outcomes
+//
+//  Three modes:
+//    query   — concept-anchored: find topic → fetch context + prereqs + cross-subject
+//    quiz    — outcome-anchored: find topic → fetch quiz outcomes + distractor hints
+//    teacher — breadth-first:   find top N topics → full context + sequence neighbours
+//
+//  Replaces: Supabase pgvector match_concept_nodes / match_topic_nodes
+//  Keeps:    all RPC calls, BuiltContext shape, buildContext() signature
 // ============================================================================
 
-import { embedQuery }         from "./embedding.ts";
+import { embedQuery }       from "./embedding.ts";
+import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  SIMILARITY_THRESHOLD,
-  CONCEPT_MATCH_COUNT,
-  TOPIC_MATCH_COUNT,
   PREREQ_DEPTH,
   PROGRESS_TIMEOUT_MS,
   type Mode,
 } from "./models.config.ts";
 
+// ── Qdrant constants (internal — Qdrant-specific, not in models.config) ───────
+
+const QDRANT_COLLECTION    = "curriculum_topics";
+const QDRANT_TOP_K         = 5;    // candidates fetched per search
+const TEACHER_TOPIC_LIMIT  = 3;    // full contexts fetched for teacher mode
+const SCORE_THRESHOLD      = 0.52; // below this → topic not in curriculum
+const QDRANT_TIMEOUT_MS    = 8_000;
+const QDRANT_RETRIES       = 2;
+const CACHE_TTL_MS         = 60_000;
+const CACHE_MAX_ENTRIES    = 200;
+
+// ── Secrets from edge function environment ────────────────────────────────────
+
+function getQdrantUrl(): string {
+  const url = Deno.env.get("QDRANT_URL");
+  if (!url) throw new Error("QDRANT_URL secret is not set");
+  return url;
+}
+
+function getQdrantKey(): string {
+  const key = Deno.env.get("QDRANT_API_KEY");
+  if (!key) throw new Error("QDRANT_API_KEY secret is not set");
+  return key;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Kept for backwards compatibility — callers that type-check against
+// ConceptNode / TopicNode will still compile.
 export interface ConceptNode {
   node_id:      string;
   name:         string;
@@ -32,65 +68,161 @@ export interface ConceptNode {
 }
 
 export interface TopicNode {
-  topic_id:               string;
-  subject:                string;
-  class:                  string;
-  term:                   string;
-  theme:                  string;
-  topic:                  string;
-  periods:                string;
-  sequence_position:      number;
-  concept_count:          number;
-  outcome_count:          number;
-  blooms_tag_count:       number;
-  application_count:      number;
-  activity_count:         number;
+  topic_id:                string;
+  subject:                 string;
+  class:                   string;
+  term:                    string;
+  theme:                   string;
+  topic:                   string;
+  periods:                 string;
+  sequence_position:       number;
+  concept_count:           number;
+  outcome_count:           number;
+  blooms_tag_count:        number;
+  application_count:       number;
+  activity_count:          number;
   difficulty_distribution: Record<string, number>;
-  blooms_levels_covered:  string[];
-  similarity:             number;
+  blooms_levels_covered:   string[];
+  similarity:              number;
+}
+
+export interface QdrantResult {
+  id:      number;
+  score:   number;
+  payload: {
+    topic_id:          string;
+    subject:           string;
+    class:             string;
+    term:              string;
+    theme:             string;
+    topic:             string;
+    periods:           string;
+    sequence_position: number;
+    concept_count:     number;
+    outcome_count:     number;
+    activity_count:    number;
+  };
 }
 
 export interface BuiltContext {
-  // What was found
-  found:           boolean;
-  subject?:        string;
-  class?:          string;
-  term?:           string;
-  topic?:          string;
+  // Always present
+  found:   boolean;
+  topics:  TopicNode[] | QdrantResult[];  // shape depends on search path used
 
-  // Core content
-  topicContext?:   Record<string, unknown>;   // full get_topic_context result
-  concepts:        ConceptNode[];
-  topics:          TopicNode[];
+  // Present when found = true
+  subject?:          string;
+  class?:            string;
+  term?:             string;
+  topic?:            string;
 
-  // Relational context (query mode)
-  prerequisites?:  unknown[];
-  crossSubject?:   unknown[];
+  // Supabase payloads
+  topicContext?:     Record<string, unknown>;
+  allTopicContexts?: Record<string, unknown>[];  // teacher mode: top N topics
+  concepts:          ConceptNode[];
+  prerequisites?:    unknown[];
+  crossSubject?:     unknown[];
+  quizOutcomes?:     unknown[];
+  studentProgress?:  unknown[];
 
-  // Quiz-specific
-  quizOutcomes?:   unknown[];
-
-  // Student state (optional — only if authenticated + fetched in time)
-  studentProgress?: unknown[];
-
-  // For prompts: best single topic/concept IDs
-  bestTopicId?:    string;
-  bestConceptId?:  string;
+  // Best single IDs for prompt builders
+  bestTopicId?:   string;
+  bestConceptId?: string;
 }
 
-// ── RPC helper ────────────────────────────────────────────────────────────────
+// ── In-memory cache ───────────────────────────────────────────────────────────
+
+interface CacheEntry { result: BuiltContext; expiresAt: number }
+const _cache = new Map<string, CacheEntry>();
+
+function _cacheKey(mode: Mode, query: string, subject = "", classVal = ""): string {
+  return `${mode}::${query.toLowerCase().trim()}::${subject}::${classVal}`;
+}
+
+function _cacheGet(key: string): BuiltContext | null {
+  const entry = _cache.get(key);
+  if (!entry || Date.now() > entry.expiresAt) { _cache.delete(key); return null; }
+  return entry.result;
+}
+
+function _cacheSet(key: string, result: BuiltContext): void {
+  // Evict oldest entry when cap is reached
+  if (_cache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = [..._cache.entries()]
+      .sort((a, b) => a[1].expiresAt - b[1].expiresAt)[0];
+    _cache.delete(oldest[0]);
+  }
+  _cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+// ── Qdrant search ─────────────────────────────────────────────────────────────
+
+async function qdrantSearch(
+  dense:     number[],
+  subject?:  string,
+  classVal?: string,
+  limit      = QDRANT_TOP_K,
+): Promise<QdrantResult[]> {
+  const must: unknown[] = [];
+  if (subject)  must.push({ key: "subject", match: { value: subject } });
+  if (classVal) must.push({ key: "class",   match: { value: classVal } });
+
+  const body: Record<string, unknown> = {
+    query:        dense,
+    using:        "dense",
+    limit,
+    with_payload: true,
+    ...(must.length ? { filter: { must } } : {}),
+  };
+
+  const url = `${getQdrantUrl()}/collections/${QDRANT_COLLECTION}/points/query`;
+  const key = getQdrantKey();
+
+  for (let attempt = 0; attempt <= QDRANT_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, 1_000 * attempt));
+      console.log(`[Qdrant] retry ${attempt}`);
+    }
+    try {
+      const controller = new AbortController();
+      const timer      = setTimeout(() => controller.abort(), QDRANT_TIMEOUT_MS);
+
+      const res = await fetch(url, {
+        method:  "POST",
+        headers: { "api-key": key, "Content-Type": "application/json" },
+        body:    JSON.stringify(body),
+        signal:  controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (res.status === 502 || res.status === 503) {
+        console.warn(`[Qdrant] ${res.status} — will retry`);
+        continue;
+      }
+      if (!res.ok) {
+        console.warn(`[Qdrant] ${res.status}:`, await res.text());
+        return [];
+      }
+      return ((await res.json()).result?.points ?? []) as QdrantResult[];
+    } catch (err: unknown) {
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      console.warn("[Qdrant]", isAbort ? `timeout after ${QDRANT_TIMEOUT_MS}ms` : err);
+    }
+  }
+
+  console.warn("[Qdrant] all retries exhausted");
+  return [];
+}
+
+// ── Supabase helpers ──────────────────────────────────────────────────────────
 
 async function rpc(
-  sb: any,
-  fn: string,
-  params: Record<string, unknown>
+  sb:     SupabaseClient,
+  fn:     string,
+  params: Record<string, unknown>,
 ): Promise<unknown[]> {
   try {
     const { data, error } = await sb.rpc(fn, params);
-    if (error) {
-      console.warn(`[RPC] ${fn} error:`, error.message);
-      return [];
-    }
+    if (error) { console.warn(`[RPC] ${fn}:`, error.message); return []; }
     return data ?? [];
   } catch (err) {
     console.warn(`[RPC] ${fn} exception:`, err);
@@ -98,191 +230,227 @@ async function rpc(
   }
 }
 
-// ── Progress fetch with timeout ───────────────────────────────────────────────
-
-async function fetchProgressSafe(
-  sb:        any,
-  userId:    string,
-  subject?:  string,
-  classVal?: string
-): Promise<unknown[]> {
+async function fetchTopicContext(
+  sb:      SupabaseClient,
+  topicId: string,
+): Promise<Record<string, unknown> | null> {
   try {
-    const result = await Promise.race([
-      rpc(sb, "get_student_progress", {
-        p_user_id:      userId,
-        subject_filter: subject  ?? "",
-        class_filter:   classVal ?? "",
-      }),
-      new Promise<unknown[]>((resolve) =>
-        setTimeout(() => resolve([]), PROGRESS_TIMEOUT_MS)
-      ),
-    ]);
-    return result as unknown[];
+    const { data, error } = await sb.rpc("get_topic_context", { p_topic_id: topicId });
+    if (error) { console.warn("[RPC] get_topic_context:", error.message); return null; }
+    return (data as Record<string, unknown>) ?? null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-// ── Query context ─────────────────────────────────────────────────────────────
-// Concept-level granularity: find what the student is asking about,
-// then build outward — topic context, prerequisites, cross-subject links.
+async function fetchProgressSafe(
+  sb:       SupabaseClient,
+  userId:   string,
+  subject?: string,
+  classVal?: string,
+): Promise<unknown[]> {
+  return Promise.race([
+    rpc(sb, "get_student_progress", {
+      p_user_id:      userId,
+      subject_filter: subject  ?? "",
+      class_filter:   classVal ?? "",
+    }),
+    new Promise<unknown[]>(resolve =>
+      setTimeout(() => resolve([]), PROGRESS_TIMEOUT_MS)
+    ),
+  ]);
+}
+
+// ── Concept anchor selection ──────────────────────────────────────────────────
+// Prefer the concept whose name appears in the query; fall back to longest
+// partial word match; final fallback is first concept alphabetically.
+
+function pickAnchorConcept(
+  concepts: ConceptNode[],
+  query:    string,
+): ConceptNode | undefined {
+  if (!concepts.length) return undefined;
+  const q     = query.toLowerCase();
+  const words = q.split(/\s+/).filter(w => w.length > 3);
+
+  return (
+    concepts.find(c => q.includes(c.name.toLowerCase()))
+    ?? concepts.find(c => words.some(w => c.name.toLowerCase().includes(w)))
+    ?? concepts[0]
+  );
+}
+
+// ── Difficulty inference from student progress ────────────────────────────────
+
+function inferDifficulty(
+  progress:  unknown[],
+  topicName: string,
+): "low" | "medium" | "high" | undefined {
+  const match = (progress as Array<{ topic?: string; mastery_pct?: number }>)
+    .find(p => p.topic?.toLowerCase() === topicName.toLowerCase());
+  if (!match?.mastery_pct) return undefined;
+  return match.mastery_pct < 30 ? "low" : match.mastery_pct < 70 ? "medium" : "high";
+}
+
+// ── Shape adapter ─────────────────────────────────────────────────────────────
+// buildQueryContext uses concept anchor from topicContext.concepts (already
+// ConceptNode shape). Qdrant results become the topics array.
+
+function qdrantToTopicNode(r: QdrantResult): TopicNode {
+  return {
+    topic_id:                r.payload.topic_id,
+    subject:                 r.payload.subject,
+    class:                   r.payload.class,
+    term:                    r.payload.term,
+    theme:                   r.payload.theme,
+    topic:                   r.payload.topic,
+    periods:                 r.payload.periods,
+    sequence_position:       r.payload.sequence_position,
+    concept_count:           r.payload.concept_count,
+    outcome_count:           r.payload.outcome_count,
+    blooms_tag_count:        0,
+    application_count:       0,
+    activity_count:          r.payload.activity_count,
+    difficulty_distribution: {},
+    blooms_levels_covered:   [],
+    similarity:              r.score,
+  };
+}
+
+// ── QUERY mode ────────────────────────────────────────────────────────────────
+// Concept-level granularity: find topic via Qdrant, anchor on best concept
+// match within that topic, then build outward — prereqs + cross-subject links.
 
 export async function buildQueryContext(
-  sb:        any,
+  sb:        SupabaseClient,
   query:     string,
   subject?:  string,
   classVal?: string,
   userId?:   string,
 ): Promise<BuiltContext> {
-  const t0 = Date.now();
+  const t0  = Date.now();
+  const key = _cacheKey("query", query, subject, classVal);
+  const hit = _cacheGet(key);
+  if (hit) { console.log("[Context/query] cache hit"); return hit; }
 
   const embedding = await embedQuery(query);
   if (!embedding) {
-    console.warn("[Context/query] No embedding — returning empty context");
+    console.warn("[Context/query] no embedding — returning empty context");
     return { found: false, concepts: [], topics: [] };
   }
 
-  // ── Parallel: concept search + topic search + student progress ────────────
-  const [concepts, topics, studentProgress] = await Promise.all([
-    rpc(sb, "match_concept_nodes", {
-      query_embedding: embedding,
-      match_count:     CONCEPT_MATCH_COUNT,
-      subject_filter:  subject  ?? "",
-      class_filter:    classVal ?? "",
-      min_similarity:  SIMILARITY_THRESHOLD,
-    }) as Promise<ConceptNode[]>,
-
-    rpc(sb, "match_topic_nodes", {
-      query_embedding: embedding,
-      match_count:     TOPIC_MATCH_COUNT,
-      subject_filter:  subject  ?? "",
-      class_filter:    classVal ?? "",
-      min_similarity:  SIMILARITY_THRESHOLD,
-    }) as Promise<TopicNode[]>,
-
+  // Qdrant search + student progress in parallel
+  const [qdrantResults, studentProgress] = await Promise.all([
+    qdrantSearch(embedding, subject, classVal),
     userId
       ? fetchProgressSafe(sb, userId, subject, classVal)
       : Promise.resolve([]),
   ]);
 
-  const bestTopic   = (topics   as TopicNode[])[0];
-  const bestConcept = (concepts as ConceptNode[])[0];
-
-  if (!bestTopic && !bestConcept) {
-    console.log(`[Context/query] No matches above threshold in ${Date.now() - t0}ms`);
-    return { found: false, concepts: concepts as ConceptNode[], topics: topics as TopicNode[], studentProgress };
+  const best = qdrantResults[0];
+  if (!best || best.score < SCORE_THRESHOLD) {
+    console.log(`[Context/query] no match above threshold (best: ${best?.score?.toFixed(3) ?? "—"}) in ${Date.now() - t0}ms`);
+    const result: BuiltContext = {
+      found:           false,
+      concepts:        [],
+      topics:          qdrantResults.map(qdrantToTopicNode),
+      studentProgress,
+    };
+    _cacheSet(key, result);
+    return result;
   }
 
-  // ── Sequential: full topic context + prerequisites + cross-subject ─────────
-  // These depend on having a topic/concept ID, so they run after the parallel batch
-  const [topicContext, prerequisites, crossSubject] = await Promise.all([
-    bestTopic
-      ? sb.rpc("get_topic_context", { p_topic_id: bestTopic.topic_id })
-          .then((r: any) => r.data ?? null)
-          .catch(() => null)
-      : Promise.resolve(null),
+  // Full topic context — concepts live inside here
+  const topicContext = await fetchTopicContext(sb, best.payload.topic_id);
+  const rawConcepts  = (topicContext?.concepts as ConceptNode[]) ?? [];
+  const anchor       = pickAnchorConcept(rawConcepts, query);
 
-    bestConcept
-      ? rpc(sb, "get_prerequisites", {
-          p_node_id: bestConcept.node_id,
-          max_depth: PREREQ_DEPTH,
-        })
+  // Prerequisites + cross-subject links anchored on best concept
+  const [prerequisites, crossSubject] = await Promise.all([
+    anchor
+      ? rpc(sb, "get_prerequisites", { p_node_id: anchor.node_id, max_depth: PREREQ_DEPTH })
       : Promise.resolve([]),
-
-    bestConcept
-      ? rpc(sb, "get_interdisciplinary_links", {
-          p_node_id: bestConcept.node_id,
-        })
+    anchor
+      ? rpc(sb, "get_interdisciplinary_links", { p_node_id: anchor.node_id })
       : Promise.resolve([]),
   ]);
 
   console.log(
-    `[Context/query] Built in ${Date.now() - t0}ms | ` +
-    `topic: ${bestTopic?.topic ?? "—"} | ` +
-    `concepts: ${(concepts as ConceptNode[]).length} | ` +
-    `prereqs: ${(prerequisites as unknown[]).length} | ` +
-    `cross: ${(crossSubject as unknown[]).length}`
+    `[Context/query] ${Date.now() - t0}ms | ` +
+    `topic: ${best.payload.topic} (${best.score.toFixed(3)}) | ` +
+    `anchor: "${anchor?.name ?? "—"}" | ` +
+    `prereqs: ${prerequisites.length} | cross: ${crossSubject.length}`
   );
 
-  return {
+  const result: BuiltContext = {
     found:           true,
-    subject:         bestTopic?.subject ?? bestConcept?.subject,
-    class:           bestTopic?.class   ?? bestConcept?.class,
-    term:            bestTopic?.term    ?? bestConcept?.term,
-    topic:           bestTopic?.topic   ?? bestConcept?.topic,
-    topicContext,
-    concepts:        concepts as ConceptNode[],
-    topics:          topics   as TopicNode[],
+    subject:         best.payload.subject,
+    class:           best.payload.class,
+    term:            best.payload.term,
+    topic:           best.payload.topic,
+    topicContext:    topicContext ?? undefined,
+    concepts:        rawConcepts,
+    topics:          qdrantResults.map(qdrantToTopicNode),
     prerequisites,
     crossSubject,
-    studentProgress: studentProgress as unknown[],
-    bestTopicId:     bestTopic?.topic_id,
-    bestConceptId:   bestConcept?.node_id,
+    studentProgress,
+    bestTopicId:     best.payload.topic_id,
+    bestConceptId:   anchor?.node_id,
   };
+  _cacheSet(key, result);
+  return result;
 }
 
-// ── Quiz context ──────────────────────────────────────────────────────────────
-// Outcome-level granularity: find the topic, get outcomes filtered by
-// difficulty. Distractor hints feed directly into MCQ generation.
+// ── QUIZ mode ─────────────────────────────────────────────────────────────────
+// Outcome-level granularity: find topic, infer or accept difficulty,
+// fetch quiz outcomes with distractor hints for MCQ generation.
 
 export async function buildQuizContext(
-  sb:         any,
-  query:      string,
-  subject?:   string,
-  classVal?:  string,
-  userId?:    string,
+  sb:          SupabaseClient,
+  query:       string,
+  subject?:    string,
+  classVal?:   string,
+  userId?:     string,
   difficulty?: "low" | "medium" | "high",
-  topicHint?: string,
 ): Promise<BuiltContext> {
-  const t0 = Date.now();
+  const t0  = Date.now();
+  const key = _cacheKey("quiz", query, subject, classVal);
+  const hit = _cacheGet(key);
+  if (hit) { console.log("[Context/quiz] cache hit"); return hit; }
 
   const embedding = await embedQuery(query);
   if (!embedding) {
     return { found: false, concepts: [], topics: [] };
   }
 
-  // ── Parallel: topic search + student progress ─────────────────────────────
-  const [topics, studentProgress] = await Promise.all([
-    rpc(sb, "match_topic_nodes", {
-      query_embedding: embedding,
-      match_count:     TOPIC_MATCH_COUNT,
-      subject_filter:  subject  ?? "",
-      class_filter:    classVal ?? "",
-      min_similarity:  SIMILARITY_THRESHOLD,
-    }) as Promise<TopicNode[]>,
-
+  const [qdrantResults, studentProgress] = await Promise.all([
+    qdrantSearch(embedding, subject, classVal),
     userId
       ? fetchProgressSafe(sb, userId, subject, classVal)
       : Promise.resolve([]),
   ]);
 
-  const bestTopic = (topics as TopicNode[])[0];
-  if (!bestTopic) {
-    return { found: false, concepts: [], topics: topics as TopicNode[], studentProgress };
+  const best = qdrantResults[0];
+  if (!best || best.score < SCORE_THRESHOLD) {
+    console.log(`[Context/quiz] no match (best: ${best?.score?.toFixed(3) ?? "—"}) in ${Date.now() - t0}ms`);
+    const result: BuiltContext = {
+      found: false, concepts: [], topics: qdrantResults.map(qdrantToTopicNode), studentProgress,
+    };
+    _cacheSet(key, result);
+    return result;
   }
 
-  // ── Infer difficulty from student progress if not specified ───────────────
-  let effectiveDifficulty = difficulty;
-  if (!effectiveDifficulty && (studentProgress as unknown[]).length > 0) {
-    const progress = studentProgress as Array<{ mastery_pct: number }>;
-    const topicProgress = progress.find((p: any) =>
-      p.topic?.toLowerCase() === bestTopic.topic.toLowerCase()
-    );
-    if (topicProgress) {
-      const pct = topicProgress.mastery_pct ?? 0;
-      effectiveDifficulty = pct < 30 ? "low" : pct < 70 ? "medium" : "high";
-      console.log(`[Context/quiz] Inferred difficulty: ${effectiveDifficulty} from ${pct}% mastery`);
-    }
+  const effectiveDifficulty =
+    difficulty ?? inferDifficulty(studentProgress, best.payload.topic);
+
+  if (effectiveDifficulty && !difficulty) {
+    console.log(`[Context/quiz] inferred difficulty: ${effectiveDifficulty}`);
   }
 
-  // ── Sequential: full topic context + quiz outcomes ────────────────────────
   const [topicContext, quizOutcomes] = await Promise.all([
-    sb.rpc("get_topic_context", { p_topic_id: bestTopic.topic_id })
-      .then((r: any) => r.data ?? null)
-      .catch(() => null),
-
+    fetchTopicContext(sb, best.payload.topic_id),
     rpc(sb, "get_quiz_outcomes", {
-      p_topic_id:        bestTopic.topic_id,
+      p_topic_id:        best.payload.topic_id,
       difficulty_filter: effectiveDifficulty ?? "",
       blooms_filter:     "",
       result_limit:      12,
@@ -290,110 +458,120 @@ export async function buildQuizContext(
   ]);
 
   console.log(
-    `[Context/quiz] Built in ${Date.now() - t0}ms | ` +
-    `topic: ${bestTopic.topic} | ` +
-    `outcomes: ${(quizOutcomes as unknown[]).length} | ` +
-    `difficulty: ${effectiveDifficulty ?? "any"}`
+    `[Context/quiz] ${Date.now() - t0}ms | ` +
+    `topic: ${best.payload.topic} (${best.score.toFixed(3)}) | ` +
+    `outcomes: ${quizOutcomes.length} | difficulty: ${effectiveDifficulty ?? "any"}`
   );
 
-  return {
+  const result: BuiltContext = {
     found:           true,
-    subject:         bestTopic.subject,
-    class:           bestTopic.class,
-    term:            bestTopic.term,
-    topic:           bestTopic.topic,
-    topicContext,
+    subject:         best.payload.subject,
+    class:           best.payload.class,
+    term:            best.payload.term,
+    topic:           best.payload.topic,
+    topicContext:    topicContext ?? undefined,
     concepts:        [],
-    topics:          topics as TopicNode[],
+    topics:          qdrantResults.map(qdrantToTopicNode),
     quizOutcomes,
-    studentProgress: studentProgress as unknown[],
-    bestTopicId:     bestTopic.topic_id,
+    studentProgress,
+    bestTopicId:     best.payload.topic_id,
   };
+  _cacheSet(key, result);
+  return result;
 }
 
-// ── Teacher context ───────────────────────────────────────────────────────────
-// Topic-level granularity: full context for one or more topics including
-// raw text fields, activities, and assessment strategies.
+// ── TEACHER mode ──────────────────────────────────────────────────────────────
+// Breadth-first: fetch full context for top N topics + sequence neighbours.
+// Raw text fields (outcomes_raw, activities_raw, assessment_raw) are passed
+// through to the teacher prompt for professional document generation.
 
 export async function buildTeacherContext(
-  sb:        any,
+  sb:        SupabaseClient,
   query:     string,
   subject?:  string,
   classVal?: string,
-  topicHint?: string,
 ): Promise<BuiltContext> {
-  const t0 = Date.now();
+  const t0  = Date.now();
+  const key = _cacheKey("teacher", query, subject, classVal);
+  const hit = _cacheGet(key);
+  if (hit) { console.log("[Context/teacher] cache hit"); return hit; }
 
   const embedding = await embedQuery(query);
   if (!embedding) {
     return { found: false, concepts: [], topics: [] };
   }
 
-  const topics = await rpc(sb, "match_topic_nodes", {
-    query_embedding: embedding,
-    match_count:     5,   // teacher may need multiple topics for a scheme
-    subject_filter:  subject  ?? "",
-    class_filter:    classVal ?? "",
-    min_similarity:  SIMILARITY_THRESHOLD,
-  }) as TopicNode[];
+  const qdrantResults = await qdrantSearch(
+    embedding, subject, classVal, TEACHER_TOPIC_LIMIT + 2
+  );
 
-  if (!topics.length) {
-    return { found: false, concepts: [], topics: [] };
+  const best = qdrantResults[0];
+  if (!best || best.score < SCORE_THRESHOLD) {
+    console.log(`[Context/teacher] no match (best: ${best?.score?.toFixed(3) ?? "—"}) in ${Date.now() - t0}ms`);
+    const result: BuiltContext = {
+      found: false, concepts: [], topics: qdrantResults.map(qdrantToTopicNode),
+    };
+    _cacheSet(key, result);
+    return result;
   }
 
-  // ── Fetch full context for up to 3 topics in parallel ────────────────────
-  const topContexts = await Promise.all(
-    topics.slice(0, 3).map((t) =>
-      sb.rpc("get_topic_context", { p_topic_id: t.topic_id })
-        .then((r: any) => r.data ?? null)
-        .catch(() => null)
-    )
-  );
+  // Full context for top N + sequence neighbours in parallel
+  const [topContexts, neighbours] = await Promise.all([
+    Promise.all(
+      qdrantResults
+        .slice(0, TEACHER_TOPIC_LIMIT)
+        .map(r => fetchTopicContext(sb, r.payload.topic_id))
+    ),
+    rpc(sb, "get_topic_neighbours", { p_topic_id: best.payload.topic_id }),
+  ]);
 
-  // ── Also get sequence neighbours for the primary topic ───────────────────
-  const neighbours = await rpc(sb, "get_topic_neighbours", {
-    p_topic_id: topics[0].topic_id,
-  });
+  const validContexts = topContexts.filter(
+    (c): c is Record<string, unknown> => c !== null
+  );
 
   console.log(
-    `[Context/teacher] Built in ${Date.now() - t0}ms | ` +
-    `topics: ${topics.length} | ` +
-    `full contexts: ${topContexts.filter(Boolean).length}`
+    `[Context/teacher] ${Date.now() - t0}ms | ` +
+    `topic: ${best.payload.topic} (${best.score.toFixed(3)}) | ` +
+    `contexts: ${validContexts.length} | neighbours: ${neighbours.length}`
   );
 
-  return {
-    found:        true,
-    subject:      topics[0].subject,
-    class:        topics[0].class,
-    term:         topics[0].term,
-    topic:        topics[0].topic,
-    topicContext: topContexts[0],             // primary topic for the prompt
-    concepts:     [],
-    topics,
-    crossSubject: neighbours,                 // used as sequence context
-    bestTopicId:  topics[0].topic_id,
-    // Pass all topic contexts as extra field for teacher prompt
-    ...(topContexts.length > 1 && { allTopicContexts: topContexts }),
-  } as BuiltContext & { allTopicContexts?: unknown[] };
+  const result: BuiltContext = {
+    found:             true,
+    subject:           best.payload.subject,
+    class:             best.payload.class,
+    term:              best.payload.term,
+    topic:             best.payload.topic,
+    topicContext:      validContexts[0],
+    allTopicContexts:  validContexts,
+    concepts:          [],
+    topics:            qdrantResults.map(qdrantToTopicNode),
+    crossSubject:      neighbours,   // sequence neighbours reuse this field
+    bestTopicId:       best.payload.topic_id,
+  };
+  _cacheSet(key, result);
+  return result;
 }
 
 // ── Mode dispatcher ───────────────────────────────────────────────────────────
+// Signature kept identical to the original for drop-in replacement.
+// topicHint param accepted but not used — Qdrant semantic search makes it
+// redundant; kept so callers don't need updating.
 
 export async function buildContext(
-  mode:       Mode,
-  sb:         any,
-  query:      string,
-  subject?:   string,
-  classVal?:  string,
-  userId?:    string,
+  mode:        Mode,
+  sb:          SupabaseClient,
+  query:       string,
+  subject?:    string,
+  classVal?:   string,
+  userId?:     string,
   difficulty?: "low" | "medium" | "high",
-  topicHint?: string,
+  _topicHint?: string,   // deprecated — no-op
 ): Promise<BuiltContext> {
   switch (mode) {
     case "quiz":
-      return buildQuizContext(sb, query, subject, classVal, userId, difficulty, topicHint);
+      return buildQuizContext(sb, query, subject, classVal, userId, difficulty);
     case "teacher":
-      return buildTeacherContext(sb, query, subject, classVal, topicHint);
+      return buildTeacherContext(sb, query, subject, classVal);
     case "query":
     default:
       return buildQueryContext(sb, query, subject, classVal, userId);
