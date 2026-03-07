@@ -8,10 +8,10 @@
 import { serve }        from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { buildTeacherContext } from "../_shared/context-builder.ts";
-import { markdownToDocx, uploadDocxAndGetUrl } from "../_shared/docx-converter.ts";
-import { buildTeacherPrompt }  from "../_shared/prompts.ts";
-import { executeTool, CURRICULUM_TOOLS } from "../_shared/tools.ts";
+import { buildTeacherContext }                    from "../_shared/context-builder.ts";
+import { jsonToDocx, uploadDocxAndGetUrl }        from "../_shared/docx-converter.ts";
+import { buildTeacherPrompt }                     from "../_shared/prompts.ts";
+import { executeTool, CURRICULUM_TOOLS }          from "../_shared/tools.ts";
 import {
   getStreamingResponse,
   accumulateSSE,
@@ -22,19 +22,31 @@ import { TIER_CONFIG } from "../_shared/models.config.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// ── JSON fence extractor ──────────────────────────────────────────────────────
+// LLM wraps its response in ```json ... ``` — strip the fence before parsing.
+
+function extractJson(text: string): Record<string, unknown> {
+  const fenced = text.match(/```json\s*([\s\S]*?)```/);
+  const raw    = fenced ? fenced[1].trim() : text.trim();
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch (err) {
+    throw new Error(`LLM response was not valid JSON: ${(err as Error).message}`);
+  }
+}
 
 // ── Non-streaming accumulator (for document generation) ───────────────────────
 
 async function generateDocument(
-  messages:   unknown[],
-  sb:         any,
+  messages: unknown[],
+  sb:       any,
 ): Promise<string> {
-  const tierConfig = TIER_CONFIG["premium"];
+  const tierConfig      = TIER_CONFIG["premium"];
   const MAX_TOOL_ROUNDS = 2;
-  let workingMessages = [...messages];
+  let   workingMessages = [...messages];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const streamRes = await getStreamingResponse(
@@ -48,11 +60,12 @@ async function generateDocument(
 
     const { content, toolCalls } = await accumulateSSE(streamRes);
 
+    // No tool calls — LLM returned the document JSON directly
     if (!toolCalls || toolCalls.length === 0) {
-      return sanitizeMarkdown(content);
+      return content;   // do NOT sanitize — we need the raw JSON fence intact
     }
 
-    // Execute tool calls
+    // Execute tool calls and loop
     workingMessages.push({
       role:       "assistant",
       content:    content || null,
@@ -76,9 +89,9 @@ async function generateDocument(
   }
 
   // Final pass without tools
-  const final = await getStreamingResponse(TIER_CONFIG["premium"], workingMessages);
-  const { content } = await accumulateSSE(final);
-  return sanitizeMarkdown(content);
+  const final          = await getStreamingResponse(TIER_CONFIG["premium"], workingMessages);
+  const { content }    = await accumulateSSE(final);
+  return content;   // raw JSON fence — do not sanitize
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -86,7 +99,7 @@ async function generateDocument(
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
-  const t0 = Date.now();
+  const t0         = Date.now();
   const wantStream = new URL(req.url).searchParams.get("stream") === "true";
 
   try {
@@ -96,7 +109,7 @@ serve(async (req) => {
 
     const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // ── Auth — teacher function requires authentication ─────────────────────
+    // ── Auth ────────────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -114,7 +127,7 @@ serve(async (req) => {
       );
     }
 
-    // Check premium tier
+    // ── Premium check ────────────────────────────────────────────────────────
     const { data: profile } = await sb
       .from("profiles")
       .select("tier, role")
@@ -132,12 +145,11 @@ serve(async (req) => {
 
     console.log(`[Teacher] User: ${user.id} | Role: ${profile?.role}`);
 
-    // ── Parse request ───────────────────────────────────────────────────────
+    // ── Parse request ────────────────────────────────────────────────────────
     const {
       messages,
       subject,
-      class:   classVal,
-      topic,
+      class: classVal,
     } = await req.json();
 
     const lastMsg = [...(messages as any[])]
@@ -146,25 +158,27 @@ serve(async (req) => {
 
     console.log(
       `[Teacher] Subject: ${subject ?? "—"} | Class: ${classVal ?? "—"} | ` +
-      `Topic: ${topic ?? "—"} | Query: "${lastMsg.slice(0, 80)}…"`
+      `Query: "${lastMsg.slice(0, 80)}…"`
     );
 
-    // ── Build teacher context ───────────────────────────────────────────────
-    const ctx = await buildTeacherContext(sb, lastMsg, subject, classVal, topic);
-    console.log(`[Teacher] Context built | found: ${ctx.found}`);
+    // ── Build teacher context ────────────────────────────────────────────────
+    // topicHint removed — Qdrant semantic search makes it redundant
+    const ctx = await buildTeacherContext(sb, lastMsg, subject, classVal);
+    console.log(`[Teacher] Context built | found: ${ctx.found} | topic: ${ctx.topic ?? "—"}`);
 
-    // ── Build system prompt ─────────────────────────────────────────────────
+    // ── Build system prompt ──────────────────────────────────────────────────
     const systemPrompt = buildTeacherPrompt(ctx as any);
 
-    // ── Assemble messages ───────────────────────────────────────────────────
+    // ── Assemble messages ────────────────────────────────────────────────────
     const llmMessages = [
       { role: "system", content: systemPrompt },
       ...messages,
     ];
 
-    // ── Generate ────────────────────────────────────────────────────────────
+    // ── Streaming mode ───────────────────────────────────────────────────────
+    // Returns the raw SSE stream — useful for showing live generation in the UI.
+    // Client receives the JSON token by token; it must parse the fence on its end.
     if (wantStream) {
-      // Streaming mode — useful for long documents
       const tierConfig = TIER_CONFIG["premium"];
       const streamRes  = await getStreamingResponse(tierConfig, llmMessages, CURRICULUM_TOOLS);
       return new Response(streamRes.body, {
@@ -173,37 +187,37 @@ serve(async (req) => {
       });
     }
 
-    // Non-streaming — accumulate, convert to docx, upload, return signed URL
-    const markdown = await generateDocument(llmMessages, sb);
-    console.log(`[Teacher] LLM done in ${Date.now() - t0}ms | ${markdown.length} chars`);
+    // ── Non-streaming — accumulate → parse JSON → build docx → upload ────────
+    const rawResponse = await generateDocument(llmMessages, sb);
+    console.log(`[Teacher] LLM done in ${Date.now() - t0}ms | ${rawResponse.length} chars`);
 
-    // Detect doc type from prompt + content and convert to .docx
+    // Parse the JSON fence from the LLM response
+    const docJson = extractJson(rawResponse);
+    const docType = (docJson.type as string) ?? "generic";
+    console.log(`[Teacher] Document type: ${docType}`);
+
+    // Build docx directly from structured JSON — no markdown parsing
     const docxStart = Date.now();
-    const docxBytes = await markdownToDocx(
-      markdown,
-      lastMsg,
-      subject,
-      classVal,
-      ctx.term,
-    );
+    const docxBytes = await jsonToDocx(docJson, subject, classVal, ctx.term);
     console.log(`[Teacher] DocX built in ${Date.now() - docxStart}ms | ${docxBytes.length} bytes`);
 
-    // Upload to Supabase Storage and get signed download URL
+    // Upload to Supabase Storage and return a signed 1-hour download URL
     const downloadUrl = await uploadDocxAndGetUrl(
       sb,
       docxBytes,
       user.id,
-      "generic",   // docx-converter auto-detects type from content
+      docType as any,
       subject,
     );
 
-    console.log(`[Teacher] Total in ${Date.now() - t0}ms`);
+    console.log(`[Teacher] Total: ${Date.now() - t0}ms`);
 
     return new Response(
       JSON.stringify({
-        content:      markdown,        // raw markdown for in-app preview
-        download_url: downloadUrl,     // signed .docx download link (1 hour)
+        content:      docJson,       // parsed document object for in-app preview
+        download_url: downloadUrl,   // signed .docx download link (1 hour)
         expires_in:   3600,
+        doc_type:     docType,
       }),
       { status: 200, headers: { ...CORS, "Content-Type": "application/json" } }
     );
