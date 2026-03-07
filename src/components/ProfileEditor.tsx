@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Settings } from 'lucide-react';
 
 export default function ProfileEditor() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,6 +58,8 @@ export default function ProfileEditor() {
         .eq('id', user.id);
 
       if (error) throw error;
+
+      await refreshProfile();
 
       toast({
         title: 'Success',

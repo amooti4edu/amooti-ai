@@ -222,6 +222,7 @@ serve(async (req) => {
     const {
       messages,
       mode        = "query" as Mode,
+      grading     = false,
       subject,
       class:      classVal,
       topic,
@@ -258,19 +259,26 @@ serve(async (req) => {
       `Query: "${lastUserMsg.slice(0, 80)}…"`
     );
 
-    // ── Step 1: Build context (always — before LLM call) ───────────────────
-    const ctxStart = Date.now();
-    const ctx = await buildContext(
-      mode,
-      sb,
-      lastUserMsg,
-      subject,
-      classVal,
-      userId ?? undefined,
-      difficulty,
-      topic,
-    );
-    console.log(`[Chat] Context built in ${Date.now() - ctxStart}ms | found: ${ctx.found}`);
+    // ── Step 1: Build context (skip for grading requests) ─────────────────
+    let ctx: Awaited<ReturnType<typeof buildContext>>;
+
+    if (grading) {
+      console.log(`[Chat] Grading request — skipping context/embedding`);
+      ctx = { found: false, concepts: [], topics: [] } as any;
+    } else {
+      const ctxStart = Date.now();
+      ctx = await buildContext(
+        mode,
+        sb,
+        lastUserMsg,
+        subject,
+        classVal,
+        userId ?? undefined,
+        difficulty,
+        topic,
+      );
+      console.log(`[Chat] Context built in ${Date.now() - ctxStart}ms | found: ${ctx.found}`);
+    }
 
     // ── Step 2: Build system prompt ─────────────────────────────────────────
     const systemPrompt = buildPrompt(mode, ctx, userRole, difficulty);
