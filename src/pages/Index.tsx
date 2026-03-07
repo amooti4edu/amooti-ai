@@ -110,9 +110,9 @@ const Index = () => {
           />
         </Link>
         <div className="flex items-center gap-4 md:gap-8 text-sm md:text-base font-medium">
-          <Link to="/about"    className="nav-link-hero hidden sm:inline">About</Link>
-          <Link to="/pricing"  className="nav-link-hero hidden sm:inline">Pricing</Link>
-          <Link to="/subjects" className="nav-link-hero hidden sm:inline">Subjects</Link>
+          <Link to="/about"    className="nav-link-hero">About</Link>
+          <Link to="/pricing"  className="nav-link-hero">Pricing</Link>
+          <Link to="/subjects" className="nav-link-hero">Subjects</Link>
           <Link to="/login/student" className="nav-link-hero">Sign In</Link>
         </div>
       </nav>
