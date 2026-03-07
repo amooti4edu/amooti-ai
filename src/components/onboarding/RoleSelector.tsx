@@ -17,11 +17,16 @@ export default function RoleSelector({ onRoleSelect, isLoading = false }: RoleSe
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4">
-      <Card className="w-full max-w-md border-slate-700 bg-slate-800">
+    <div className="flex items-center justify-center min-h-screen p-4" style={{ backgroundColor: '#FAF8F4', fontFamily: "'EB Garamond', Georgia, serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap');
+        .role-selector-container { font-family: 'EB Garamond', Georgia, serif; }
+        .role-selector-title { font-family: 'Playfair Display', Georgia, serif; }
+      `}</style>
+      <Card className="w-full max-w-md border-[#c8b99a] bg-white shadow-lg role-selector-container">
         <CardHeader>
-          <CardTitle className="text-2xl">Amooti</CardTitle>
-          <CardDescription className="text-base mt-2">
+          <CardTitle className="text-3xl role-selector-title" style={{ color: '#1a1814' }}>Amooti</CardTitle>
+          <CardDescription className="text-base mt-2" style={{ color: '#6b5e48' }}>
             Let's get started! What's your role?
           </CardDescription>
         </CardHeader>
@@ -31,15 +36,15 @@ export default function RoleSelector({ onRoleSelect, isLoading = false }: RoleSe
             onClick={() => !isLoading && setSelectedRole('student')}
             className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
               selectedRole === 'student'
-                ? 'border-blue-500 bg-blue-500/10'
-                : 'border-slate-600 bg-slate-700/50 hover:border-slate-500'
+                ? 'border-[#8a7a62] bg-[#f5f0e8]'
+                : 'border-[#c8b99a] bg-white hover:border-[#8a7a62]'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <div className="flex items-center gap-3">
               <div className="text-2xl">📚</div>
               <div>
-                <h3 className="font-semibold text-white">Student</h3>
-                <p className="text-sm text-slate-300">
+                <h3 className="font-semibold" style={{ color: '#1a1814' }}>Student</h3>
+                <p className="text-sm" style={{ color: '#6b5e48' }}>
                   Learn with AI tutoring in different subjects
                 </p>
               </div>
@@ -51,15 +56,15 @@ export default function RoleSelector({ onRoleSelect, isLoading = false }: RoleSe
             onClick={() => !isLoading && setSelectedRole('teacher')}
             className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
               selectedRole === 'teacher'
-                ? 'border-purple-500 bg-purple-500/10'
-                : 'border-slate-600 bg-slate-700/50 hover:border-slate-500'
+                ? 'border-[#8a7a62] bg-[#f5f0e8]'
+                : 'border-[#c8b99a] bg-white hover:border-[#8a7a62]'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <div className="flex items-center gap-3">
               <div className="text-2xl">👨‍🏫</div>
               <div>
-                <h3 className="font-semibold text-white">Teacher</h3>
-                <p className="text-sm text-slate-300">
+                <h3 className="font-semibold" style={{ color: '#1a1814' }}>Teacher</h3>
+                <p className="text-sm" style={{ color: '#6b5e48' }}>
                   Create lesson plans and materials for your class
                 </p>
               </div>
@@ -71,15 +76,15 @@ export default function RoleSelector({ onRoleSelect, isLoading = false }: RoleSe
             onClick={() => !isLoading && setSelectedRole('school')}
             className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
               selectedRole === 'school'
-                ? 'border-green-500 bg-green-500/10'
-                : 'border-slate-600 bg-slate-700/50 hover:border-slate-500'
+                ? 'border-[#8a7a62] bg-[#f5f0e8]'
+                : 'border-[#c8b99a] bg-white hover:border-[#8a7a62]'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <div className="flex items-center gap-3">
               <div className="text-2xl">🏫</div>
               <div>
-                <h3 className="font-semibold text-white">School (Enterprise)</h3>
-                <p className="text-sm text-slate-300">
+                <h3 className="font-semibold" style={{ color: '#1a1814' }}>School (Enterprise)</h3>
+                <p className="text-sm" style={{ color: '#6b5e48' }}>
                   Shared account for multiple teachers and students
                 </p>
               </div>
@@ -90,7 +95,8 @@ export default function RoleSelector({ onRoleSelect, isLoading = false }: RoleSe
           <Button
             onClick={handleContinue}
             disabled={!selectedRole || isLoading}
-            className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+            className="w-full mt-6 disabled:opacity-50"
+            style={{ backgroundColor: '#1a1814', color: '#FAF8F4' }}
           >
             {isLoading ? 'Setting up...' : 'Continue'}
           </Button>

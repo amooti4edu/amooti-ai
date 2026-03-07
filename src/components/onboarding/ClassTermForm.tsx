@@ -40,30 +40,35 @@ export default function ClassTermForm({ role, onSubmit, isLoading = false }: Cla
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4">
-      <Card className="w-full max-w-md border-slate-700 bg-slate-800">
+    <div className="flex items-center justify-center min-h-screen p-4" style={{ backgroundColor: '#FAF8F4', fontFamily: "'EB Garamond', Georgia, serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap');
+        .class-form-container { font-family: 'EB Garamond', Georgia, serif; }
+        .class-form-title { font-family: 'Playfair Display', Georgia, serif; }
+      `}</style>
+      <Card className="w-full max-w-md border-[#c8b99a] bg-white shadow-lg class-form-container">
         <CardHeader>
-          <CardTitle className="text-2xl">Your Current Class</CardTitle>
-          <CardDescription className="text-base mt-2">
+          <CardTitle className="text-3xl class-form-title" style={{ color: '#1a1814' }}>Your Current Class</CardTitle>
+          <CardDescription className="text-base mt-2" style={{ color: '#6b5e48' }}>
             {getDescription()}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Class Selection */}
           <div className="space-y-2">
-            <Label htmlFor="class-select" className="text-base">
+            <Label htmlFor="class-select" className="text-base" style={{ color: '#1a1814' }}>
               Class
             </Label>
             <Select value={selectedClass} onValueChange={setSelectedClass} disabled={isLoading}>
               <SelectTrigger
                 id="class-select"
-                className="border-slate-600 bg-slate-700 text-white"
+                className="border-[#c8b99a] bg-white text-[#1a1814]"
               >
                 <SelectValue placeholder="Select your class" />
               </SelectTrigger>
-              <SelectContent className="bg-slate-700 border-slate-600">
+              <SelectContent className="bg-white border-[#c8b99a]">
                 {classes.map((cls) => (
-                  <SelectItem key={cls} value={cls} className="text-white">
+                  <SelectItem key={cls} value={cls} className="text-[#1a1814]">
                     {cls}
                   </SelectItem>
                 ))}
@@ -73,19 +78,19 @@ export default function ClassTermForm({ role, onSubmit, isLoading = false }: Cla
 
           {/* Term Selection */}
           <div className="space-y-2">
-            <Label htmlFor="term-select" className="text-base">
+            <Label htmlFor="term-select" className="text-base" style={{ color: '#1a1814' }}>
               Term
             </Label>
             <Select value={selectedTerm} onValueChange={setSelectedTerm} disabled={isLoading}>
               <SelectTrigger
                 id="term-select"
-                className="border-slate-600 bg-slate-700 text-white"
+                className="border-[#c8b99a] bg-white text-[#1a1814]"
               >
                 <SelectValue placeholder="Select your term" />
               </SelectTrigger>
-              <SelectContent className="bg-slate-700 border-slate-600">
+              <SelectContent className="bg-white border-[#c8b99a]">
                 {terms.map((term) => (
-                  <SelectItem key={term} value={term} className="text-white">
+                  <SelectItem key={term} value={term} className="text-[#1a1814]">
                     Term {term}
                   </SelectItem>
                 ))}
@@ -94,7 +99,7 @@ export default function ClassTermForm({ role, onSubmit, isLoading = false }: Cla
           </div>
 
           {/* Info Text */}
-          <p className="text-xs text-slate-400">
+          <p className="text-xs" style={{ color: '#8a7a62' }}>
             💡 You can update this anytime from your profile. Students and teachers move to new
             classes and terms regularly!
           </p>
@@ -103,7 +108,8 @@ export default function ClassTermForm({ role, onSubmit, isLoading = false }: Cla
           <Button
             onClick={handleSubmit}
             disabled={!selectedClass || !selectedTerm || isLoading}
-            className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+            className="w-full mt-6 disabled:opacity-50"
+            style={{ backgroundColor: '#1a1814', color: '#FAF8F4' }}
           >
             {isLoading ? 'Saving...' : 'Continue'}
           </Button>

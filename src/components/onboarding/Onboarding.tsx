@@ -12,7 +12,7 @@ interface OnboardingState {
   role: 'student' | 'teacher' | 'school' | null;
   class: string | null;
   term: string | null;
-  tier: 'free' | 'basic' | 'premium' | null;
+  tier: 'free' | 'basic' | 'premium' | 'enterprise' | null;
 }
 
 interface OnboardingProps {
@@ -95,7 +95,7 @@ export default function Onboarding({ onComplete, isDevelopment = false }: Onboar
     }
   };
 
-  const handleTierSelect = async (tier: 'free' | 'basic' | 'premium') => {
+  const handleTierSelect = async (tier: 'free' | 'basic' | 'premium' | 'enterprise') => {
     setIsLoading(true);
     try {
       // Create subscription record

@@ -82,11 +82,11 @@ export default function ProfileEditor() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" title="Edit profile">
+        <Button variant="outline" size="icon" title="Edit profile" className="h-9 w-9">
           <Settings className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="border-slate-700 bg-slate-800">
+      <DialogContent className="border-slate-700 bg-slate-800 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Profile</DialogTitle>
           <DialogDescription className="text-slate-400">
