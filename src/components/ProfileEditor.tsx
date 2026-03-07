@@ -52,8 +52,8 @@ export default function ProfileEditor() {
         .from('profiles')
         .update({
           display_name: formData.display_name,
-          class: formData.class,
-          term: formData.term,
+          class: formData.class === 'none' ? null : formData.class,
+          term: formData.term === 'none' ? null : formData.term,
         })
         .eq('id', user.id);
 
