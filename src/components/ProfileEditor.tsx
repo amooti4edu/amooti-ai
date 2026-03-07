@@ -129,7 +129,7 @@ export default function ProfileEditor() {
                 <SelectValue placeholder="Select class" />
               </SelectTrigger>
               <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="">Not set</SelectItem>
+                <SelectItem value="none">Not set</SelectItem>
                 {classes.map((cls) => (
                   <SelectItem key={cls} value={cls} className="text-white">
                     {cls}
@@ -156,7 +156,7 @@ export default function ProfileEditor() {
                 <SelectValue placeholder="Select term" />
               </SelectTrigger>
               <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="">Not set</SelectItem>
+                <SelectItem value="none">Not set</SelectItem>
                 {terms.map((term) => (
                   <SelectItem key={term} value={term} className="text-white">
                     Term {term}
