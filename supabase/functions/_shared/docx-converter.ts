@@ -1,8 +1,18 @@
 // ============================================================================
 //  docx-converter.ts
-//  Converts LLM-generated markdown into a properly formatted .docx file.
-//  Uses the docx npm library via esm.sh (Deno-compatible).
-//  Uploads to Supabase Storage and returns a signed download URL.
+//  Converts LLM output into a properly formatted .docx file.
+//
+//  Two conversion paths:
+//    markdownToDocx() — original path, parses markdown text → docx elements
+//    jsonToDocx()     — new path, builds docx directly from teacher JSON output
+//                       (scheme_of_work, lesson_plan, topic_summary,
+//                        assessment, progress_report)
+//
+//  jsonToDocx is preferred for teacher mode because it builds tables and
+//  lists directly from structured data — no markdown parsing involved.
+//  markdownToDocx is retained for all other uses and backwards compatibility.
+//
+//  Both paths upload to Supabase Storage and return a signed download URL.
 // ============================================================================
 
 import {
@@ -12,91 +22,580 @@ import {
   TableOfContents,
 } from "https://esm.sh/docx@8.5.0";
 
-// ── Document type detection ───────────────────────────────────────────────────
-// Determines how to style the document based on content keywords.
+// ── Document type ─────────────────────────────────────────────────────────────
 
 export type DocType =
   | "scheme_of_work"
   | "lesson_plan"
   | "assessment"
   | "topic_summary"
+  | "progress_report"
   | "generic";
 
 function detectDocType(markdown: string, prompt: string): DocType {
   const text = (markdown + " " + prompt).toLowerCase();
-  if (text.includes("scheme of work") || text.includes("scheme"))  return "scheme_of_work";
-  if (text.includes("lesson plan")    || text.includes("lesson"))  return "lesson_plan";
+  if (text.includes("scheme of work") || text.includes("scheme"))   return "scheme_of_work";
+  if (text.includes("lesson plan")    || text.includes("lesson"))   return "lesson_plan";
   if (text.includes("assessment")     || text.includes("exam")
-   || text.includes("test")           || text.includes("quiz"))    return "assessment";
+   || text.includes("test")           || text.includes("quiz"))     return "assessment";
   if (text.includes("summary")        || text.includes("overview")) return "topic_summary";
+  if (text.includes("progress")       || text.includes("report"))   return "progress_report";
   return "generic";
 }
 
 // ── Colour palette ────────────────────────────────────────────────────────────
 
 const COLORS = {
-  primary:     "1B4F8A",   // dark blue — headings
-  secondary:   "2E75B6",   // mid blue — subheadings
-  accent:      "D6E4F0",   // light blue — table header fill
-  headerBg:    "1B4F8A",   // document header background
-  white:       "FFFFFF",
-  black:       "000000",
-  gray:        "666666",
-  lightGray:   "F2F2F2",
-  border:      "CCCCCC",
+  primary:   "1B4F8A",
+  secondary: "2E75B6",
+  accent:    "D6E4F0",
+  white:     "FFFFFF",
+  black:     "000000",
+  gray:      "666666",
+  lightGray: "F2F2F2",
+  border:    "CCCCCC",
+  success:   "1E7E34",
+  warning:   "856404",
+  danger:    "721C24",
 };
 
-// ── Border helper ─────────────────────────────────────────────────────────────
+// ── Shared border helpers ─────────────────────────────────────────────────────
 
-const cellBorder = {
-  style: BorderStyle.SINGLE,
-  size:  1,
-  color: COLORS.border,
-};
+const cellBorder = { style: BorderStyle.SINGLE, size: 1, color: COLORS.border };
 const allBorders = {
   top: cellBorder, bottom: cellBorder,
   left: cellBorder, right: cellBorder,
 };
 
-// ── Markdown parser ───────────────────────────────────────────────────────────
-// Converts markdown text into docx Paragraph/Table elements.
-// Handles: headings, bold/italic inline, tables, bullets, numbered lists,
-// horizontal rules, and plain paragraphs.
+const A4_WIDTH    = 9026;  // DXA (content width at 2cm margins)
+const CELL_MARGIN = { top: 80, bottom: 80, left: 120, right: 120 };
 
-interface ParsedElement {
-  type: "paragraph" | "table" | "spacer";
-  element: Paragraph | Table;
+// ── Shared element builders ───────────────────────────────────────────────────
+
+function makeHeading(text: string, level: 1 | 2 | 3): Paragraph {
+  return new Paragraph({
+    heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][level - 1],
+    children: [new TextRun({
+      text,
+      bold:  true,
+      color: level === 1 ? COLORS.primary : COLORS.secondary,
+      size:  level === 1 ? 32 : level === 2 ? 28 : 24,
+      font:  "Arial",
+    })],
+    spacing: { before: level === 1 ? 360 : 240, after: 120 },
+  });
 }
 
+function makePara(text: string, options: { bold?: boolean; color?: string; size?: number; spacing?: number } = {}): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({
+      text,
+      bold:  options.bold  ?? false,
+      color: options.color ?? COLORS.black,
+      size:  options.size  ?? 22,
+      font:  "Arial",
+    })],
+    spacing: { after: options.spacing ?? 120 },
+  });
+}
+
+function makeLabelValue(label: string, value: string): Paragraph {
+  return new Paragraph({
+    children: [
+      new TextRun({ text: label + ": ", bold: true, size: 22, font: "Arial", color: COLORS.secondary }),
+      new TextRun({ text: value,         bold: false, size: 22, font: "Arial" }),
+    ],
+    spacing: { after: 80 },
+  });
+}
+
+function makeBullet(text: string, ref: string): Paragraph {
+  return new Paragraph({
+    numbering: { reference: ref, level: 0 },
+    children:  [new TextRun({ text, size: 22, font: "Arial" })],
+  });
+}
+
+function spacer(size = 160): Paragraph {
+  return new Paragraph({ children: [], spacing: { after: size } });
+}
+
+function makeHeaderCell(text: string, width: number): TableCell {
+  return new TableCell({
+    borders: allBorders,
+    width:   { size: width, type: WidthType.DXA },
+    shading: { fill: COLORS.accent, type: ShadingType.CLEAR },
+    margins: CELL_MARGIN,
+    children: [new Paragraph({
+      children: [new TextRun({ text, bold: true, font: "Arial", size: 20 })],
+    })],
+  });
+}
+
+function makeDataCell(text: string, width: number): TableCell {
+  return new TableCell({
+    borders: allBorders,
+    width:   { size: width, type: WidthType.DXA },
+    margins: CELL_MARGIN,
+    children: [new Paragraph({
+      children: [new TextRun({ text: text ?? "", font: "Arial", size: 20 })],
+    })],
+  });
+}
+
+// ── Document wrapper ──────────────────────────────────────────────────────────
+
+function wrapDocument(
+  title:    string,
+  metaLine: string,
+  children: Array<Paragraph | Table>,
+  numbering: ReturnType<typeof buildNumbering>,
+): Document {
+  return new Document({
+    numbering: { config: numbering },
+    styles: {
+      default: { document: { run: { font: "Arial", size: 22 } } },
+      paragraphStyles: [
+        { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { size: 32, bold: true, font: "Arial", color: COLORS.primary },
+          paragraph: { spacing: { before: 360, after: 120 }, outlineLevel: 0 } },
+        { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { size: 28, bold: true, font: "Arial", color: COLORS.secondary },
+          paragraph: { spacing: { before: 240, after: 80 }, outlineLevel: 1 } },
+        { id: "Heading3", name: "Heading 3", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { size: 24, bold: true, font: "Arial", color: COLORS.secondary },
+          paragraph: { spacing: { before: 180, after: 80 }, outlineLevel: 2 } },
+      ],
+    },
+    sections: [{
+      properties: {
+        page: {
+          size:   { width: 11906, height: 16838 },
+          margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 },
+        },
+      },
+      headers: {
+        default: new Header({
+          children: [new Paragraph({
+            children: [
+              new TextRun({ text: "Uganda O-Level Curriculum", color: COLORS.gray, size: 18, font: "Arial" }),
+              new TextRun({ text: metaLine ? `  |  ${metaLine}` : "", color: COLORS.gray, size: 18 }),
+            ],
+            alignment: AlignmentType.RIGHT,
+            border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 } },
+          })],
+        }),
+      },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            children: [
+              new TextRun({ text: `${title}  |  `, color: COLORS.gray, size: 18 }),
+              new TextRun({ text: "Page ",          color: COLORS.gray, size: 18 }),
+              new TextRun({ children: [PageNumber.CURRENT], color: COLORS.gray, size: 18 }),
+            ],
+            alignment: AlignmentType.CENTER,
+            border: { top: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 } },
+          })],
+        }),
+      },
+      children: [
+        new Paragraph({
+          children: [new TextRun({ text: title, bold: true, size: 40, font: "Arial", color: COLORS.primary })],
+          spacing: { before: 0, after: 120 },
+        }),
+        ...(metaLine ? [new Paragraph({
+          children: [new TextRun({ text: metaLine, color: COLORS.gray, size: 20, font: "Arial" })],
+          spacing: { before: 0, after: 40 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 } },
+        })] : []),
+        spacer(240),
+        ...children,
+      ],
+    }],
+  });
+}
+
+// ── Numbering config ──────────────────────────────────────────────────────────
+
+function buildNumbering(maxGroups = 60) {
+  const config = [];
+  for (let i = 0; i < maxGroups; i++) {
+    config.push({
+      reference: `bullets-${i}`,
+      levels: [{
+        level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT,
+        style: { paragraph: { indent: { left: 720, hanging: 360 } } },
+      }],
+    });
+    config.push({
+      reference: `numbers-${i}`,
+      levels: [{
+        level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.LEFT,
+        style: { paragraph: { indent: { left: 720, hanging: 360 } } },
+      }],
+    });
+  }
+  return config;
+}
+
+// ── JSON document builders ────────────────────────────────────────────────────
+// Each function receives the parsed JSON and returns docx body elements.
+// No markdown parsing — elements built directly from structured data.
+
+function buildSchemeOfWork(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
+  const elements: Array<Paragraph | Table> = [];
+  const weeks: any[] = data.weeks ?? [];
+
+  if (data.note) {
+    elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
+  }
+
+  // Column widths for: Week | Topic | Subtopic | Outcomes | Methods | Materials | Assessment
+  const cols = [500, 1200, 1400, 1800, 1200, 1126, 1200];  // sums to A4_WIDTH (≈9026 - rounding)
+  const headers = ["Week", "Topic", "Subtopic", "Learning Outcomes", "Methods", "Materials", "Assessment"];
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: headers.map((h, i) => makeHeaderCell(h, cols[i])),
+  });
+
+  const dataRows = weeks.map(w => {
+    const outcomes = Array.isArray(w.outcomes) ? w.outcomes.join("\n• ") : (w.outcomes ?? "");
+    const methods  = Array.isArray(w.methods)  ? w.methods.join(", ")   : (w.methods  ?? "");
+
+    return new TableRow({
+      children: [
+        makeDataCell(String(w.week ?? ""), cols[0]),
+        makeDataCell(w.topic    ?? "", cols[1]),
+        makeDataCell(w.subtopic ?? "", cols[2]),
+        new TableCell({
+          borders: allBorders,
+          width:   { size: cols[3], type: WidthType.DXA },
+          margins: CELL_MARGIN,
+          children: outcomes
+            ? [
+                new Paragraph({ children: [new TextRun({ text: "• " + outcomes.replace(/\n• /g, "\n• "), font: "Arial", size: 20 })], spacing: { after: 0 } }),
+              ]
+            : [new Paragraph({ children: [] })],
+        }),
+        makeDataCell(methods,         cols[4]),
+        makeDataCell(w.materials ?? "", cols[5]),
+        makeDataCell(w.assessment ?? "", cols[6]),
+      ],
+    });
+  });
+
+  elements.push(new Table({
+    width: { size: A4_WIDTH, type: WidthType.DXA },
+    columnWidths: cols,
+    rows: [headerRow, ...dataRows],
+  }));
+
+  return elements;
+}
+
+function buildLessonPlan(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
+  const elements: Array<Paragraph | Table> = [];
+  let   bulletIdx = 0;
+
+  if (data.note) {
+    elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
+  }
+
+  // Meta block
+  elements.push(
+    makeLabelValue("Duration",    `${data.duration_mins ?? 40} minutes`),
+    spacer(80),
+  );
+
+  // Objectives
+  if (data.objectives?.length) {
+    elements.push(makeHeading("Learning Objectives", 2));
+    const ref = `bullets-${bulletIdx++}`;
+    for (const obj of data.objectives) {
+      elements.push(makeBullet(obj, ref));
+    }
+    elements.push(spacer());
+  }
+
+  // Lesson sections as a table
+  const sections: any[] = data.sections ?? [];
+  if (sections.length) {
+    elements.push(makeHeading("Lesson Procedure", 2));
+    const cols = [1600, 800, 3313, 3313];
+    const headerRow = new TableRow({
+      tableHeader: true,
+      children: ["Phase", "Time (min)", "Teacher Activity", "Student Activity"].map((h, i) =>
+        makeHeaderCell(h, cols[i])
+      ),
+    });
+    const sectionRows = sections.map(s => new TableRow({
+      children: [
+        makeDataCell(s.name             ?? "", cols[0]),
+        makeDataCell(String(s.duration_mins ?? ""), cols[1]),
+        makeDataCell(s.teacher_activity ?? "", cols[2]),
+        makeDataCell(s.student_activity ?? "", cols[3]),
+      ],
+    }));
+    elements.push(new Table({
+      width: { size: A4_WIDTH, type: WidthType.DXA },
+      columnWidths: cols,
+      rows: [headerRow, ...sectionRows],
+    }));
+    elements.push(spacer());
+  }
+
+  // Materials
+  if (data.materials?.length) {
+    elements.push(makeHeading("Materials Required", 2));
+    const ref = `bullets-${bulletIdx++}`;
+    const mats = Array.isArray(data.materials) ? data.materials : [data.materials];
+    for (const m of mats) elements.push(makeBullet(m, ref));
+    elements.push(spacer());
+  }
+
+  // Homework
+  if (data.homework) {
+    elements.push(makeHeading("Homework", 2));
+    elements.push(makePara(data.homework));
+  }
+
+  return elements;
+}
+
+function buildTopicSummary(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
+  const elements: Array<Paragraph | Table> = [];
+  let   bulletIdx = 0;
+
+  if (data.note) {
+    elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
+  }
+
+  if (data.overview) {
+    elements.push(makeHeading("Overview", 2));
+    elements.push(makePara(data.overview));
+    elements.push(spacer());
+  }
+
+  if (data.why_it_matters) {
+    elements.push(makeHeading("Why It Matters", 2));
+    elements.push(makePara(data.why_it_matters));
+    elements.push(spacer());
+  }
+
+  if (data.key_concepts?.length) {
+    elements.push(makeHeading("Key Concepts", 2));
+    const cols = [2500, 6526];
+    const headerRow = new TableRow({
+      tableHeader: true,
+      children: ["Concept", "Definition"].map((h, i) => makeHeaderCell(h, cols[i])),
+    });
+    const rows = data.key_concepts.map((c: any) => new TableRow({
+      children: [
+        makeDataCell(c.name       ?? "", cols[0]),
+        makeDataCell(c.definition ?? "", cols[1]),
+      ],
+    }));
+    elements.push(new Table({
+      width: { size: A4_WIDTH, type: WidthType.DXA },
+      columnWidths: cols,
+      rows: [headerRow, ...rows],
+    }));
+    elements.push(spacer());
+  }
+
+  if (data.connections?.length) {
+    elements.push(makeHeading("Cross-Subject Connections", 2));
+    const ref = `bullets-${bulletIdx++}`;
+    for (const c of data.connections) {
+      elements.push(makeBullet(`${c.subject}: ${c.link}`, ref));
+    }
+  }
+
+  return elements;
+}
+
+function buildAssessment(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
+  const elements: Array<Paragraph | Table> = [];
+  let   bulletIdx = 0;
+
+  if (data.note) {
+    elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
+  }
+
+  if (data.instructions) {
+    elements.push(makeHeading("Instructions", 2));
+    elements.push(makePara(data.instructions, { bold: true }));
+    elements.push(spacer());
+  }
+
+  const questions: any[] = data.questions ?? [];
+  for (const q of questions) {
+    // Question stem
+    elements.push(new Paragraph({
+      children: [
+        new TextRun({ text: `${q.number}. `, bold: true, size: 22, font: "Arial" }),
+        new TextRun({ text: q.text ?? "",    bold: false, size: 22, font: "Arial" }),
+        ...(q.marks ? [new TextRun({ text: `  [${q.marks} mark${q.marks > 1 ? "s" : ""}]`, size: 20, color: COLORS.gray, font: "Arial" })] : []),
+      ],
+      spacing: { before: 160, after: 80 },
+    }));
+
+    // MCQ options
+    if (q.type === "mcq" && q.options?.length) {
+      const ref = `bullets-${bulletIdx++}`;
+      for (const opt of q.options) {
+        elements.push(new Paragraph({
+          children: [
+            new TextRun({ text: `${opt.id}.  `, bold: true,  size: 22, font: "Arial" }),
+            new TextRun({ text: opt.text,       bold: false, size: 22, font: "Arial" }),
+          ],
+          indent:  { left: 720 },
+          spacing: { after: 40 },
+        }));
+      }
+    }
+
+    // Essay marking guide (indented, italicised)
+    if (q.type === "essay" && q.marking_guide) {
+      elements.push(new Paragraph({
+        children: [new TextRun({ text: `Marking guide: ${q.marking_guide}`, italics: true, size: 20, color: COLORS.gray, font: "Arial" })],
+        indent:  { left: 720 },
+        spacing: { after: 80 },
+      }));
+    }
+
+    elements.push(spacer(80));
+  }
+
+  return elements;
+}
+
+function buildProgressReport(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
+  const elements: Array<Paragraph | Table> = [];
+
+  if (data.note) {
+    elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
+  }
+
+  if (data.summary) {
+    elements.push(makeHeading("Summary", 2));
+    elements.push(makePara(data.summary));
+    elements.push(spacer());
+  }
+
+  const outcomes: any[] = data.outcomes ?? [];
+  if (outcomes.length) {
+    elements.push(makeHeading("Outcome Performance", 2));
+    const cols = [3500, 900, 1200, 3426];
+    const headerRow = new TableRow({
+      tableHeader: true,
+      children: ["Learning Outcome", "Mastery %", "Status", "Intervention"].map((h, i) =>
+        makeHeaderCell(h, cols[i])
+      ),
+    });
+
+    const statusColor = (s: string) => s === "on_track" ? COLORS.success : s === "needs_support" ? COLORS.warning : COLORS.danger;
+    const statusLabel = (s: string) => s === "on_track" ? "On Track" : s === "needs_support" ? "Needs Support" : "Critical";
+
+    const rows = outcomes.map(o => new TableRow({
+      children: [
+        makeDataCell(o.outcome ?? "", cols[0]),
+        makeDataCell(`${o.mastery_pct ?? "—"}%`, cols[1]),
+        new TableCell({
+          borders: allBorders,
+          width:   { size: cols[2], type: WidthType.DXA },
+          margins: CELL_MARGIN,
+          children: [new Paragraph({
+            children: [new TextRun({
+              text:  statusLabel(o.status ?? ""),
+              bold:  true,
+              color: statusColor(o.status ?? ""),
+              size:  20,
+              font:  "Arial",
+            })],
+          })],
+        }),
+        makeDataCell(o.intervention ?? "—", cols[3]),
+      ],
+    }));
+
+    elements.push(new Table({
+      width: { size: A4_WIDTH, type: WidthType.DXA },
+      columnWidths: cols,
+      rows: [headerRow, ...rows],
+    }));
+  }
+
+  return elements;
+}
+
+// ── JSON → docx (new teacher path) ───────────────────────────────────────────
+
+export async function jsonToDocx(
+  json:      Record<string, unknown>,
+  subject?:  string,
+  classVal?: string,
+  term?:     string,
+): Promise<Uint8Array> {
+  const data     = json as any;
+  const docType  = (data.type ?? "generic") as DocType;
+  const title    = data.title ?? "Curriculum Document";
+  const metaLine = [
+    data.subject ?? subject,
+    data.class   ?? classVal,
+    (data.term   ?? term) ? `Term ${data.term ?? term}` : "",
+  ].filter(Boolean).join(" | ");
+
+  const numbering = buildNumbering(60);
+  let   bodyElements: Array<Paragraph | Table> = [];
+
+  switch (docType) {
+    case "scheme_of_work":
+      bodyElements = buildSchemeOfWork(data, numbering);
+      break;
+    case "lesson_plan":
+      bodyElements = buildLessonPlan(data, numbering);
+      break;
+    case "topic_summary":
+      bodyElements = buildTopicSummary(data, numbering);
+      break;
+    case "assessment":
+      bodyElements = buildAssessment(data, numbering);
+      break;
+    case "progress_report":
+      bodyElements = buildProgressReport(data, numbering);
+      break;
+    default:
+      bodyElements = [makePara("Unrecognised document type. Please check the response format.")];
+  }
+
+  const doc    = wrapDocument(title, metaLine, bodyElements, numbering);
+  const buffer = await Packer.toBuffer(doc);
+  return new Uint8Array(buffer);
+}
+
+// ── Markdown → docx (original path — unchanged) ──────────────────────────────
+
 function parseInline(text: string): TextRun[] {
-  // Handle **bold**, *italic*, ***bold-italic**, `code`
   const runs: TextRun[] = [];
   const pattern = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|(.+?))/gs;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(text)) !== null) {
     if (!match[0]) break;
-    if (match[1]) {
-      // bold-italic
-      runs.push(new TextRun({ text: match[2], bold: true, italics: true }));
-    } else if (match[3] !== undefined) {
-      // bold
-      runs.push(new TextRun({ text: match[3], bold: true }));
-    } else if (match[4] !== undefined) {
-      // italic
-      runs.push(new TextRun({ text: match[4], italics: true }));
-    } else if (match[5] !== undefined) {
-      // code
-      runs.push(new TextRun({ text: match[5], font: "Courier New", size: 20 }));
-    } else if (match[6] !== undefined) {
-      runs.push(new TextRun({ text: match[6] }));
-    }
+    if      (match[1]) runs.push(new TextRun({ text: match[2], bold: true, italics: true }));
+    else if (match[3] !== undefined) runs.push(new TextRun({ text: match[3], bold: true }));
+    else if (match[4] !== undefined) runs.push(new TextRun({ text: match[4], italics: true }));
+    else if (match[5] !== undefined) runs.push(new TextRun({ text: match[5], font: "Courier New", size: 20 }));
+    else if (match[6] !== undefined) runs.push(new TextRun({ text: match[6] }));
   }
 
   return runs.length > 0 ? runs : [new TextRun({ text })];
 }
 
-function makeHeading(text: string, level: 1 | 2 | 3): Paragraph {
+function makeMarkdownHeading(text: string, level: 1 | 2 | 3): Paragraph {
   const headingMap = {
     1: HeadingLevel.HEADING_1,
     2: HeadingLevel.HEADING_2,
@@ -116,51 +615,41 @@ function makeHeading(text: string, level: 1 | 2 | 3): Paragraph {
 }
 
 function makeTableFromMarkdown(lines: string[]): Table {
-  // lines[0] = header row, lines[1] = separator, lines[2..] = data rows
   const parseRow = (line: string): string[] =>
     line.split("|").map((c) => c.trim()).filter((c) => c !== "");
 
   const headers  = parseRow(lines[0]);
-  const dataRows = lines.slice(2);  // skip separator line
-
+  const dataRows = lines.slice(2);
   const colCount = headers.length;
-  const tableWidth = 9026;  // A4 content width in DXA
-  const colWidth   = Math.floor(tableWidth / colCount);
-  const colWidths  = Array(colCount).fill(colWidth);
+  const colWidth = Math.floor(A4_WIDTH / colCount);
+  const colWidths = Array(colCount).fill(colWidth);
 
   const headerRow = new TableRow({
     tableHeader: true,
-    children: headers.map((h) =>
-      new TableCell({
-        borders: allBorders,
-        width:   { size: colWidth, type: WidthType.DXA },
-        shading: { fill: COLORS.accent, type: ShadingType.CLEAR },
-        margins: { top: 80, bottom: 80, left: 120, right: 120 },
-        children: [new Paragraph({
-          children: [new TextRun({ text: h, bold: true, font: "Arial", size: 20 })],
-        })],
-      })
-    ),
+    children: headers.map((h) => new TableCell({
+      borders: allBorders,
+      width:   { size: colWidth, type: WidthType.DXA },
+      shading: { fill: COLORS.accent, type: ShadingType.CLEAR },
+      margins: CELL_MARGIN,
+      children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, font: "Arial", size: 20 })] })],
+    })),
   });
 
   const bodyRows = dataRows.map((line) => {
     const cells = parseRow(line);
-    // Pad or trim to match header count
     while (cells.length < colCount) cells.push("");
     return new TableRow({
-      children: cells.slice(0, colCount).map((cell, i) =>
-        new TableCell({
-          borders: allBorders,
-          width:   { size: colWidths[i], type: WidthType.DXA },
-          margins: { top: 80, bottom: 80, left: 120, right: 120 },
-          children: [new Paragraph({ children: parseInline(cell) })],
-        })
-      ),
+      children: cells.slice(0, colCount).map((cell, i) => new TableCell({
+        borders: allBorders,
+        width:   { size: colWidths[i], type: WidthType.DXA },
+        margins: CELL_MARGIN,
+        children: [new Paragraph({ children: parseInline(cell) })],
+      })),
     });
   });
 
   return new Table({
-    width:        { size: tableWidth, type: WidthType.DXA },
+    width:        { size: A4_WIDTH, type: WidthType.DXA },
     columnWidths: colWidths,
     rows:         [headerRow, ...bodyRows],
   });
@@ -171,46 +660,37 @@ function markdownToElements(
   numbering: ReturnType<typeof buildNumbering>,
 ): Array<Paragraph | Table> {
   const elements: Array<Paragraph | Table> = [];
-  const lines     = markdown.split("\n");
-  let   i         = 0;
-  let   bulletRef = 0;  // cycling bullet references for independent lists
+  const lines = markdown.split("\n");
+  let i = 0;
+  let bulletRef = 0;
 
   while (i < lines.length) {
     const line = lines[i];
 
-    // ── Blank line ────────────────────────────────────────────────────────────
     if (!line.trim()) {
       elements.push(new Paragraph({ children: [], spacing: { after: 80 } }));
-      i++;
-      continue;
+      i++; continue;
     }
 
-    // ── Horizontal rule ───────────────────────────────────────────────────────
     if (/^[-*_]{3,}$/.test(line.trim())) {
       elements.push(new Paragraph({
         children: [],
         border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 } },
         spacing: { before: 120, after: 120 },
       }));
-      i++;
-      continue;
+      i++; continue;
     }
 
-    // ── Headings ──────────────────────────────────────────────────────────────
     const h1 = line.match(/^# (.+)/);
     const h2 = line.match(/^## (.+)/);
     const h3 = line.match(/^### (.+)/);
-    if (h1) { elements.push(makeHeading(h1[1], 1)); i++; continue; }
-    if (h2) { elements.push(makeHeading(h2[1], 2)); i++; continue; }
-    if (h3) { elements.push(makeHeading(h3[1], 3)); i++; continue; }
+    if (h1) { elements.push(makeMarkdownHeading(h1[1], 1)); i++; continue; }
+    if (h2) { elements.push(makeMarkdownHeading(h2[1], 2)); i++; continue; }
+    if (h3) { elements.push(makeMarkdownHeading(h3[1], 3)); i++; continue; }
 
-    // ── Markdown table ────────────────────────────────────────────────────────
     if (line.startsWith("|")) {
       const tableLines: string[] = [];
-      while (i < lines.length && lines[i].startsWith("|")) {
-        tableLines.push(lines[i]);
-        i++;
-      }
+      while (i < lines.length && lines[i].startsWith("|")) { tableLines.push(lines[i]); i++; }
       if (tableLines.length >= 2) {
         elements.push(makeTableFromMarkdown(tableLines));
         elements.push(new Paragraph({ children: [], spacing: { after: 120 } }));
@@ -218,73 +698,32 @@ function markdownToElements(
       continue;
     }
 
-    // ── Bullet list ───────────────────────────────────────────────────────────
     if (/^[\-\*\•] /.test(line)) {
-      // Start a new bullet group — use a fresh reference so they don't merge
       const ref = `bullets-${bulletRef++}`;
       while (i < lines.length && /^[\-\*\•] /.test(lines[i])) {
         const text = lines[i].replace(/^[\-\*\•] /, "");
-        elements.push(new Paragraph({
-          numbering: { reference: ref, level: 0 },
-          children:  parseInline(text),
-        }));
+        elements.push(new Paragraph({ numbering: { reference: ref, level: 0 }, children: parseInline(text) }));
         i++;
       }
       continue;
     }
 
-    // ── Numbered list ─────────────────────────────────────────────────────────
     if (/^\d+\. /.test(line)) {
       const ref = `numbers-${bulletRef++}`;
       while (i < lines.length && /^\d+\. /.test(lines[i])) {
         const text = lines[i].replace(/^\d+\. /, "");
-        elements.push(new Paragraph({
-          numbering: { reference: ref, level: 0 },
-          children:  parseInline(text),
-        }));
+        elements.push(new Paragraph({ numbering: { reference: ref, level: 0 }, children: parseInline(text) }));
         i++;
       }
       continue;
     }
 
-    // ── Regular paragraph ─────────────────────────────────────────────────────
-    elements.push(new Paragraph({
-      children: parseInline(line),
-      spacing:  { after: 120 },
-    }));
+    elements.push(new Paragraph({ children: parseInline(line), spacing: { after: 120 } }));
     i++;
   }
 
   return elements;
 }
-
-// ── Numbering config builder ──────────────────────────────────────────────────
-// Pre-generates enough bullet/number references for a typical document.
-
-function buildNumbering(maxGroups = 50) {
-  const config = [];
-  for (let i = 0; i < maxGroups; i++) {
-    config.push({
-      reference: `bullets-${i}`,
-      levels: [{
-        level: 0, format: LevelFormat.BULLET, text: "•",
-        alignment: AlignmentType.LEFT,
-        style: { paragraph: { indent: { left: 720, hanging: 360 } } },
-      }],
-    });
-    config.push({
-      reference: `numbers-${i}`,
-      levels: [{
-        level: 0, format: LevelFormat.DECIMAL, text: "%1.",
-        alignment: AlignmentType.LEFT,
-        style: { paragraph: { indent: { left: 720, hanging: 360 } } },
-      }],
-    });
-  }
-  return config;
-}
-
-// ── Document builder ──────────────────────────────────────────────────────────
 
 function extractTitle(markdown: string, docType: DocType): string {
   const firstH1 = markdown.match(/^# (.+)/m);
@@ -294,6 +733,7 @@ function extractTitle(markdown: string, docType: DocType): string {
     lesson_plan:    "Lesson Plan",
     assessment:     "Assessment",
     topic_summary:  "Topic Summary",
+    progress_report:"Progress Report",
     generic:        "Curriculum Document",
   };
   return labels[docType];
@@ -306,132 +746,18 @@ export async function markdownToDocx(
   classVal?: string,
   term?:     string,
 ): Promise<Uint8Array> {
-  const docType    = detectDocType(markdown, prompt);
-  const title      = extractTitle(markdown, docType);
-  const numbering  = buildNumbering(60);
-  const elements   = markdownToElements(markdown, numbering);
+  const docType   = detectDocType(markdown, prompt);
+  const title     = extractTitle(markdown, docType);
+  const numbering = buildNumbering(60);
+  const elements  = markdownToElements(markdown, numbering);
+  const metaLine  = [subject, classVal, term ? `Term ${term}` : ""].filter(Boolean).join(" | ");
 
-  const metaLine = [subject, classVal, term ? `Term ${term}` : ""]
-    .filter(Boolean).join(" | ");
-
-  const doc = new Document({
-    numbering: { config: numbering },
-
-    styles: {
-      default: {
-        document: { run: { font: "Arial", size: 22 } },  // 11pt default
-      },
-      paragraphStyles: [
-        {
-          id: "Heading1", name: "Heading 1",
-          basedOn: "Normal", next: "Normal", quickFormat: true,
-          run:       { size: 32, bold: true, font: "Arial", color: COLORS.primary },
-          paragraph: { spacing: { before: 360, after: 120 }, outlineLevel: 0 },
-        },
-        {
-          id: "Heading2", name: "Heading 2",
-          basedOn: "Normal", next: "Normal", quickFormat: true,
-          run:       { size: 28, bold: true, font: "Arial", color: COLORS.secondary },
-          paragraph: { spacing: { before: 240, after: 80 }, outlineLevel: 1 },
-        },
-        {
-          id: "Heading3", name: "Heading 3",
-          basedOn: "Normal", next: "Normal", quickFormat: true,
-          run:       { size: 24, bold: true, font: "Arial", color: COLORS.secondary },
-          paragraph: { spacing: { before: 180, after: 80 }, outlineLevel: 2 },
-        },
-      ],
-    },
-
-    sections: [{
-      properties: {
-        page: {
-          size:   { width: 11906, height: 16838 },  // A4
-          margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 },  // 2cm margins
-        },
-      },
-
-      headers: {
-        default: new Header({
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text:  "Uganda O-Level Curriculum",
-                  color: COLORS.gray,
-                  size:  18,
-                  font:  "Arial",
-                }),
-                new TextRun({ text: metaLine ? `  |  ${metaLine}` : "", color: COLORS.gray, size: 18 }),
-              ],
-              alignment: AlignmentType.RIGHT,
-              border: {
-                bottom: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 },
-              },
-            }),
-          ],
-        }),
-      },
-
-      footers: {
-        default: new Footer({
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({ text: `${title}  |  `, color: COLORS.gray, size: 18 }),
-                new TextRun({ text: "Page ", color: COLORS.gray, size: 18 }),
-                new TextRun({
-                  children: [PageNumber.CURRENT],
-                  color: COLORS.gray, size: 18,
-                }),
-              ],
-              alignment: AlignmentType.CENTER,
-              border: {
-                top: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 },
-              },
-            }),
-          ],
-        }),
-      },
-
-      children: [
-        // Title block
-        new Paragraph({
-          children: [
-            new TextRun({
-              text:  title,
-              bold:  true,
-              size:  40,
-              font:  "Arial",
-              color: COLORS.primary,
-            }),
-          ],
-          spacing:   { before: 0, after: 120 },
-          alignment: AlignmentType.LEFT,
-        }),
-
-        // Meta line (subject | class | term)
-        ...(metaLine ? [new Paragraph({
-          children: [new TextRun({ text: metaLine, color: COLORS.gray, size: 20, font: "Arial" })],
-          spacing:  { before: 0, after: 40 },
-          border: {
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: COLORS.primary, space: 1 },
-          },
-        })] : []),
-
-        new Paragraph({ children: [], spacing: { after: 240 } }),
-
-        // Document body
-        ...elements,
-      ],
-    }],
-  });
-
+  const doc    = wrapDocument(title, metaLine, elements, numbering);
   const buffer = await Packer.toBuffer(doc);
   return new Uint8Array(buffer);
 }
 
-// ── Upload to Supabase Storage ────────────────────────────────────────────────
+// ── Upload to Supabase Storage (shared by both paths) ─────────────────────────
 
 export async function uploadDocxAndGetUrl(
   sb:        any,
@@ -456,7 +782,6 @@ export async function uploadDocxAndGetUrl(
     throw new Error(`Storage upload failed: ${uploadError.message}`);
   }
 
-  // Signed URL valid for 1 hour
   const { data: signedData, error: signError } = await sb.storage
     .from(bucket)
     .createSignedUrl(path, 60 * 60);
