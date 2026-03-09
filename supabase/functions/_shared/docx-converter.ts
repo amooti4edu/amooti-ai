@@ -246,51 +246,29 @@ function buildNumbering(maxGroups = 60) {
 function buildSchemeOfWork(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
   const elements: Array<Paragraph | Table> = [];
   const weeks: any[] = data.weeks ?? [];
+  let bulletIdx = 0;
 
   if (data.note) {
     elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
   }
 
-  // Column widths for: Week | Topic | Subtopic | Outcomes | Methods | Materials | Assessment
-  const cols = [500, 1200, 1400, 1800, 1200, 1126, 1200];  // sums to A4_WIDTH (≈9026 - rounding)
-  const headers = ["Week", "Topic", "Subtopic", "Learning Outcomes", "Methods", "Materials", "Assessment"];
+  for (const w of weeks) {
+    elements.push(makeHeading(`Week ${w.week ?? "—"}: ${w.topic ?? ""}`, 2));
+    if (w.subtopic) elements.push(makeLabelValue("Subtopic", w.subtopic));
 
-  const headerRow = new TableRow({
-    tableHeader: true,
-    children: headers.map((h, i) => makeHeaderCell(h, cols[i])),
-  });
+    if (w.outcomes?.length) {
+      elements.push(makePara("Learning Outcomes:", { bold: true }));
+      const ref = `bullets-${bulletIdx++}`;
+      const outcomes = Array.isArray(w.outcomes) ? w.outcomes : [w.outcomes];
+      for (const o of outcomes) elements.push(makeBullet(o, ref));
+    }
 
-  const dataRows = weeks.map(w => {
-    const outcomes = Array.isArray(w.outcomes) ? w.outcomes.join("\n• ") : (w.outcomes ?? "");
-    const methods  = Array.isArray(w.methods)  ? w.methods.join(", ")   : (w.methods  ?? "");
-
-    return new TableRow({
-      children: [
-        makeDataCell(String(w.week ?? ""), cols[0]),
-        makeDataCell(w.topic    ?? "", cols[1]),
-        makeDataCell(w.subtopic ?? "", cols[2]),
-        new TableCell({
-          borders: allBorders,
-          width:   { size: cols[3], type: WidthType.DXA },
-          margins: CELL_MARGIN,
-          children: outcomes
-            ? [
-                new Paragraph({ children: [new TextRun({ text: "• " + outcomes.replace(/\n• /g, "\n• "), font: "Arial", size: 20 })], spacing: { after: 0 } }),
-              ]
-            : [new Paragraph({ children: [] })],
-        }),
-        makeDataCell(methods,         cols[4]),
-        makeDataCell(w.materials ?? "", cols[5]),
-        makeDataCell(w.assessment ?? "", cols[6]),
-      ],
-    });
-  });
-
-  elements.push(new Table({
-    width: { size: A4_WIDTH, type: WidthType.DXA },
-    columnWidths: cols,
-    rows: [headerRow, ...dataRows],
-  }));
+    const methods = Array.isArray(w.methods) ? w.methods.join(", ") : (w.methods ?? "");
+    if (methods) elements.push(makeLabelValue("Methods", methods));
+    if (w.materials) elements.push(makeLabelValue("Materials", w.materials));
+    if (w.assessment) elements.push(makeLabelValue("Assessment", w.assessment));
+    elements.push(spacer());
+  }
 
   return elements;
 }
@@ -319,30 +297,16 @@ function buildLessonPlan(data: any, numbering: ReturnType<typeof buildNumbering>
     elements.push(spacer());
   }
 
-  // Lesson sections as a table
+  // Lesson sections as text
   const sections: any[] = data.sections ?? [];
   if (sections.length) {
     elements.push(makeHeading("Lesson Procedure", 2));
-    const cols = [1600, 800, 3313, 3313];
-    const headerRow = new TableRow({
-      tableHeader: true,
-      children: ["Phase", "Time (min)", "Teacher Activity", "Student Activity"].map((h, i) =>
-        makeHeaderCell(h, cols[i])
-      ),
-    });
-    const sectionRows = sections.map(s => new TableRow({
-      children: [
-        makeDataCell(s.name             ?? "", cols[0]),
-        makeDataCell(String(s.duration_mins ?? ""), cols[1]),
-        makeDataCell(s.teacher_activity ?? "", cols[2]),
-        makeDataCell(s.student_activity ?? "", cols[3]),
-      ],
-    }));
-    elements.push(new Table({
-      width: { size: A4_WIDTH, type: WidthType.DXA },
-      columnWidths: cols,
-      rows: [headerRow, ...sectionRows],
-    }));
+    for (const s of sections) {
+      elements.push(makePara(`${s.name ?? "Phase"} (${s.duration_mins ?? "—"} min)`, { bold: true }));
+      if (s.teacher_activity) elements.push(makeLabelValue("Teacher Activity", s.teacher_activity));
+      if (s.student_activity) elements.push(makeLabelValue("Student Activity", s.student_activity));
+      elements.push(spacer(80));
+    }
     elements.push(spacer());
   }
 
@@ -386,22 +350,9 @@ function buildTopicSummary(data: any, numbering: ReturnType<typeof buildNumberin
 
   if (data.key_concepts?.length) {
     elements.push(makeHeading("Key Concepts", 2));
-    const cols = [2500, 6526];
-    const headerRow = new TableRow({
-      tableHeader: true,
-      children: ["Concept", "Definition"].map((h, i) => makeHeaderCell(h, cols[i])),
-    });
-    const rows = data.key_concepts.map((c: any) => new TableRow({
-      children: [
-        makeDataCell(c.name       ?? "", cols[0]),
-        makeDataCell(c.definition ?? "", cols[1]),
-      ],
-    }));
-    elements.push(new Table({
-      width: { size: A4_WIDTH, type: WidthType.DXA },
-      columnWidths: cols,
-      rows: [headerRow, ...rows],
-    }));
+    for (const c of data.key_concepts) {
+      elements.push(makeLabelValue(c.name ?? "Concept", c.definition ?? ""));
+    }
     elements.push(spacer());
   }
 
@@ -488,44 +439,15 @@ function buildProgressReport(data: any, numbering: ReturnType<typeof buildNumber
   const outcomes: any[] = data.outcomes ?? [];
   if (outcomes.length) {
     elements.push(makeHeading("Outcome Performance", 2));
-    const cols = [3500, 900, 1200, 3426];
-    const headerRow = new TableRow({
-      tableHeader: true,
-      children: ["Learning Outcome", "Mastery %", "Status", "Intervention"].map((h, i) =>
-        makeHeaderCell(h, cols[i])
-      ),
-    });
-
-    const statusColor = (s: string) => s === "on_track" ? COLORS.success : s === "needs_support" ? COLORS.warning : COLORS.danger;
     const statusLabel = (s: string) => s === "on_track" ? "On Track" : s === "needs_support" ? "Needs Support" : "Critical";
 
-    const rows = outcomes.map(o => new TableRow({
-      children: [
-        makeDataCell(o.outcome ?? "", cols[0]),
-        makeDataCell(`${o.mastery_pct ?? "—"}%`, cols[1]),
-        new TableCell({
-          borders: allBorders,
-          width:   { size: cols[2], type: WidthType.DXA },
-          margins: CELL_MARGIN,
-          children: [new Paragraph({
-            children: [new TextRun({
-              text:  statusLabel(o.status ?? ""),
-              bold:  true,
-              color: statusColor(o.status ?? ""),
-              size:  20,
-              font:  "Arial",
-            })],
-          })],
-        }),
-        makeDataCell(o.intervention ?? "—", cols[3]),
-      ],
-    }));
-
-    elements.push(new Table({
-      width: { size: A4_WIDTH, type: WidthType.DXA },
-      columnWidths: cols,
-      rows: [headerRow, ...rows],
-    }));
+    for (const o of outcomes) {
+      elements.push(makePara(`${o.outcome ?? "Outcome"}`, { bold: true }));
+      elements.push(makeLabelValue("Mastery", `${o.mastery_pct ?? "—"}%`));
+      elements.push(makeLabelValue("Status", statusLabel(o.status ?? "")));
+      if (o.intervention) elements.push(makeLabelValue("Intervention", o.intervention));
+      elements.push(spacer(80));
+    }
   }
 
   return elements;
@@ -688,13 +610,15 @@ function markdownToElements(
     if (h2) { elements.push(makeMarkdownHeading(h2[1], 2)); i++; continue; }
     if (h3) { elements.push(makeMarkdownHeading(h3[1], 3)); i++; continue; }
 
+    // Skip markdown tables — convert to plain text lines
     if (line.startsWith("|")) {
-      const tableLines: string[] = [];
-      while (i < lines.length && lines[i].startsWith("|")) { tableLines.push(lines[i]); i++; }
-      if (tableLines.length >= 2) {
-        elements.push(makeTableFromMarkdown(tableLines));
-        elements.push(new Paragraph({ children: [], spacing: { after: 120 } }));
+      // Skip separator rows like |---|---|
+      if (/^\|[\s\-:]+\|/.test(line)) { i++; continue; }
+      const cells = line.split("|").map(c => c.trim()).filter(c => c !== "");
+      if (cells.length) {
+        elements.push(new Paragraph({ children: parseInline(cells.join("  —  ")), spacing: { after: 80 } }));
       }
+      i++;
       continue;
     }
 

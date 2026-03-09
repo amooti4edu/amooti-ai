@@ -69,6 +69,17 @@ export function TeacherResponse({ doc }: TeacherResponseProps) {
       {/* Document content */}
       <div className="prose prose-sm dark:prose-invert max-w-none">
         <ReactMarkdown
+          components={{
+            table: ({ children }) => <div className="my-2">{children}</div>,
+            thead: ({ children }) => <>{children}</>,
+            tbody: ({ children }) => <>{children}</>,
+            tr: ({ children }) => {
+              const cells = Array.isArray(children) ? children : [children];
+              return <p className="leading-relaxed">{cells}</p>;
+            },
+            th: ({ children }) => <strong className="mr-2">{children}  •  </strong>,
+            td: ({ children }) => <span className="mr-2">{children}  •  </span>,
+          }}
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[rehypeKatex, rehypeHighlight]}
         >
