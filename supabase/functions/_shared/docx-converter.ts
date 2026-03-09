@@ -612,11 +612,15 @@ function markdownToElements(
 
     if (line.startsWith("|")) {
       const tableLines: string[] = [];
-      while (i < lines.length && lines[i].startsWith("|")) { tableLines.push(lines[i]); i++; }
-      if (tableLines.length >= 2) {
-        elements.push(makeTableFromMarkdown(tableLines));
-        elements.push(new Paragraph({ children: [], spacing: { after: 120 } }));
+      // Skip markdown tables — convert to plain text lines
+    if (line.startsWith("|")) {
+      // Skip separator rows like |---|---|
+      if (/^\|[\s\-:]+\|/.test(line)) { i++; continue; }
+      const cells = line.split("|").map(c => c.trim()).filter(c => c !== "");
+      if (cells.length) {
+        elements.push(new Paragraph({ children: parseInline(cells.join("  —  ")), spacing: { after: 80 } }));
       }
+      i++;
       continue;
     }
 
