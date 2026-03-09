@@ -297,30 +297,16 @@ function buildLessonPlan(data: any, numbering: ReturnType<typeof buildNumbering>
     elements.push(spacer());
   }
 
-  // Lesson sections as a table
+  // Lesson sections as text
   const sections: any[] = data.sections ?? [];
   if (sections.length) {
     elements.push(makeHeading("Lesson Procedure", 2));
-    const cols = [1600, 800, 3313, 3313];
-    const headerRow = new TableRow({
-      tableHeader: true,
-      children: ["Phase", "Time (min)", "Teacher Activity", "Student Activity"].map((h, i) =>
-        makeHeaderCell(h, cols[i])
-      ),
-    });
-    const sectionRows = sections.map(s => new TableRow({
-      children: [
-        makeDataCell(s.name             ?? "", cols[0]),
-        makeDataCell(String(s.duration_mins ?? ""), cols[1]),
-        makeDataCell(s.teacher_activity ?? "", cols[2]),
-        makeDataCell(s.student_activity ?? "", cols[3]),
-      ],
-    }));
-    elements.push(new Table({
-      width: { size: A4_WIDTH, type: WidthType.DXA },
-      columnWidths: cols,
-      rows: [headerRow, ...sectionRows],
-    }));
+    for (const s of sections) {
+      elements.push(makePara(`${s.name ?? "Phase"} (${s.duration_mins ?? "—"} min)`, { bold: true }));
+      if (s.teacher_activity) elements.push(makeLabelValue("Teacher Activity", s.teacher_activity));
+      if (s.student_activity) elements.push(makeLabelValue("Student Activity", s.student_activity));
+      elements.push(spacer(80));
+    }
     elements.push(spacer());
   }
 
