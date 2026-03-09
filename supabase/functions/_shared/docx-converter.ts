@@ -610,9 +610,7 @@ function markdownToElements(
     if (h2) { elements.push(makeMarkdownHeading(h2[1], 2)); i++; continue; }
     if (h3) { elements.push(makeMarkdownHeading(h3[1], 3)); i++; continue; }
 
-    if (line.startsWith("|")) {
-      const tableLines: string[] = [];
-      // Skip markdown tables — convert to plain text lines
+    // Skip markdown tables — convert to plain text lines
     if (line.startsWith("|")) {
       // Skip separator rows like |---|---|
       if (/^\|[\s\-:]+\|/.test(line)) { i++; continue; }
