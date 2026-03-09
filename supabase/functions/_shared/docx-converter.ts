@@ -350,22 +350,9 @@ function buildTopicSummary(data: any, numbering: ReturnType<typeof buildNumberin
 
   if (data.key_concepts?.length) {
     elements.push(makeHeading("Key Concepts", 2));
-    const cols = [2500, 6526];
-    const headerRow = new TableRow({
-      tableHeader: true,
-      children: ["Concept", "Definition"].map((h, i) => makeHeaderCell(h, cols[i])),
-    });
-    const rows = data.key_concepts.map((c: any) => new TableRow({
-      children: [
-        makeDataCell(c.name       ?? "", cols[0]),
-        makeDataCell(c.definition ?? "", cols[1]),
-      ],
-    }));
-    elements.push(new Table({
-      width: { size: A4_WIDTH, type: WidthType.DXA },
-      columnWidths: cols,
-      rows: [headerRow, ...rows],
-    }));
+    for (const c of data.key_concepts) {
+      elements.push(makeLabelValue(c.name ?? "Concept", c.definition ?? ""));
+    }
     elements.push(spacer());
   }
 
