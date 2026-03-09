@@ -439,44 +439,15 @@ function buildProgressReport(data: any, numbering: ReturnType<typeof buildNumber
   const outcomes: any[] = data.outcomes ?? [];
   if (outcomes.length) {
     elements.push(makeHeading("Outcome Performance", 2));
-    const cols = [3500, 900, 1200, 3426];
-    const headerRow = new TableRow({
-      tableHeader: true,
-      children: ["Learning Outcome", "Mastery %", "Status", "Intervention"].map((h, i) =>
-        makeHeaderCell(h, cols[i])
-      ),
-    });
-
-    const statusColor = (s: string) => s === "on_track" ? COLORS.success : s === "needs_support" ? COLORS.warning : COLORS.danger;
     const statusLabel = (s: string) => s === "on_track" ? "On Track" : s === "needs_support" ? "Needs Support" : "Critical";
 
-    const rows = outcomes.map(o => new TableRow({
-      children: [
-        makeDataCell(o.outcome ?? "", cols[0]),
-        makeDataCell(`${o.mastery_pct ?? "—"}%`, cols[1]),
-        new TableCell({
-          borders: allBorders,
-          width:   { size: cols[2], type: WidthType.DXA },
-          margins: CELL_MARGIN,
-          children: [new Paragraph({
-            children: [new TextRun({
-              text:  statusLabel(o.status ?? ""),
-              bold:  true,
-              color: statusColor(o.status ?? ""),
-              size:  20,
-              font:  "Arial",
-            })],
-          })],
-        }),
-        makeDataCell(o.intervention ?? "—", cols[3]),
-      ],
-    }));
-
-    elements.push(new Table({
-      width: { size: A4_WIDTH, type: WidthType.DXA },
-      columnWidths: cols,
-      rows: [headerRow, ...rows],
-    }));
+    for (const o of outcomes) {
+      elements.push(makePara(`${o.outcome ?? "Outcome"}`, { bold: true }));
+      elements.push(makeLabelValue("Mastery", `${o.mastery_pct ?? "—"}%`));
+      elements.push(makeLabelValue("Status", statusLabel(o.status ?? "")));
+      if (o.intervention) elements.push(makeLabelValue("Intervention", o.intervention));
+      elements.push(spacer(80));
+    }
   }
 
   return elements;
