@@ -246,51 +246,29 @@ function buildNumbering(maxGroups = 60) {
 function buildSchemeOfWork(data: any, numbering: ReturnType<typeof buildNumbering>): Array<Paragraph | Table> {
   const elements: Array<Paragraph | Table> = [];
   const weeks: any[] = data.weeks ?? [];
+  let bulletIdx = 0;
 
   if (data.note) {
     elements.push(makePara(`Note: ${data.note}`, { color: COLORS.warning, bold: true }), spacer());
   }
 
-  // Column widths for: Week | Topic | Subtopic | Outcomes | Methods | Materials | Assessment
-  const cols = [500, 1200, 1400, 1800, 1200, 1126, 1200];  // sums to A4_WIDTH (≈9026 - rounding)
-  const headers = ["Week", "Topic", "Subtopic", "Learning Outcomes", "Methods", "Materials", "Assessment"];
+  for (const w of weeks) {
+    elements.push(makeHeading(`Week ${w.week ?? "—"}: ${w.topic ?? ""}`, 2));
+    if (w.subtopic) elements.push(makeLabelValue("Subtopic", w.subtopic));
 
-  const headerRow = new TableRow({
-    tableHeader: true,
-    children: headers.map((h, i) => makeHeaderCell(h, cols[i])),
-  });
+    if (w.outcomes?.length) {
+      elements.push(makePara("Learning Outcomes:", { bold: true }));
+      const ref = `bullets-${bulletIdx++}`;
+      const outcomes = Array.isArray(w.outcomes) ? w.outcomes : [w.outcomes];
+      for (const o of outcomes) elements.push(makeBullet(o, ref));
+    }
 
-  const dataRows = weeks.map(w => {
-    const outcomes = Array.isArray(w.outcomes) ? w.outcomes.join("\n• ") : (w.outcomes ?? "");
-    const methods  = Array.isArray(w.methods)  ? w.methods.join(", ")   : (w.methods  ?? "");
-
-    return new TableRow({
-      children: [
-        makeDataCell(String(w.week ?? ""), cols[0]),
-        makeDataCell(w.topic    ?? "", cols[1]),
-        makeDataCell(w.subtopic ?? "", cols[2]),
-        new TableCell({
-          borders: allBorders,
-          width:   { size: cols[3], type: WidthType.DXA },
-          margins: CELL_MARGIN,
-          children: outcomes
-            ? [
-                new Paragraph({ children: [new TextRun({ text: "• " + outcomes.replace(/\n• /g, "\n• "), font: "Arial", size: 20 })], spacing: { after: 0 } }),
-              ]
-            : [new Paragraph({ children: [] })],
-        }),
-        makeDataCell(methods,         cols[4]),
-        makeDataCell(w.materials ?? "", cols[5]),
-        makeDataCell(w.assessment ?? "", cols[6]),
-      ],
-    });
-  });
-
-  elements.push(new Table({
-    width: { size: A4_WIDTH, type: WidthType.DXA },
-    columnWidths: cols,
-    rows: [headerRow, ...dataRows],
-  }));
+    const methods = Array.isArray(w.methods) ? w.methods.join(", ") : (w.methods ?? "");
+    if (methods) elements.push(makeLabelValue("Methods", methods));
+    if (w.materials) elements.push(makeLabelValue("Materials", w.materials));
+    if (w.assessment) elements.push(makeLabelValue("Assessment", w.assessment));
+    elements.push(spacer());
+  }
 
   return elements;
 }
