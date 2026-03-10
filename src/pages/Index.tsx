@@ -92,6 +92,14 @@ const SchoolRow = ({ items, direction = "right", speed = 4 }: SchoolRowProps) =>
 };
 
 const Index = () => {
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect authenticated users to chat
+  useEffect(() => {
+    if (!loading && session) navigate("/chat");
+  }, [session, loading, navigate]);
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden flex flex-col">
       {/* Hero background */}
