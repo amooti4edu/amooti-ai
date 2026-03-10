@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Settings } from 'lucide-react';
 
 export default function ProfileEditor() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,8 +37,8 @@ export default function ProfileEditor() {
     if (profile) {
       setFormData({
         display_name: profile.display_name || '',
-        class: profile.class || '',
-        term: profile.term || '',
+        class: profile.class || 'none',
+        term: profile.term || 'none',
       });
     }
   }, [profile, isOpen]);
@@ -52,12 +52,14 @@ export default function ProfileEditor() {
         .from('profiles')
         .update({
           display_name: formData.display_name,
-          class: formData.class,
-          term: formData.term,
+          class: formData.class === 'none' ? null : formData.class,
+          term: formData.term === 'none' ? null : formData.term,
         })
         .eq('id', user.id);
 
       if (error) throw error;
+
+      await refreshProfile();
 
       toast({
         title: 'Success',
@@ -127,7 +129,7 @@ export default function ProfileEditor() {
                 <SelectValue placeholder="Select class" />
               </SelectTrigger>
               <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="">Not set</SelectItem>
+                <SelectItem value="none">Not set</SelectItem>
                 {classes.map((cls) => (
                   <SelectItem key={cls} value={cls} className="text-white">
                     {cls}
@@ -154,7 +156,7 @@ export default function ProfileEditor() {
                 <SelectValue placeholder="Select term" />
               </SelectTrigger>
               <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="">Not set</SelectItem>
+                <SelectItem value="none">Not set</SelectItem>
                 {terms.map((term) => (
                   <SelectItem key={term} value={term} className="text-white">
                     Term {term}

@@ -42,6 +42,7 @@ const OLLAMA_URL      = "https://ollama.com/api/chat";   // Ollama Cloud (NDJSON
 const OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions";
 const GOOGLE_URL      = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const ANTHROPIC_URL   = "https://api.anthropic.com/v1/messages";
+const CLOUDFLARE_URL  = "https://api.cloudflare.com/client/v4/accounts/";  // Base URL, account ID will be appended
 
 // ── Tier definitions ──────────────────────────────────────────────────────────
 
@@ -99,32 +100,11 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     allowedModes: ["query", "quiz"],
     models: [
       {
-        label:         "Gemini 2.5 Flash (Google)",
-        providerUrl:   GOOGLE_URL,
-        model:         "gemini-2.5-flash-preview-05-20",
-        apiKeyEnv:     "GOOGLE_API_KEY",
-        supportsTools: true,
-      },
-      {
-        label:         "Gemini 2.5 Flash (OpenRouter)",
+        label:         "GPT-5 Nano",
         providerUrl:   OPENROUTER_URL,
-        model:         "google/gemini-2.5-flash-preview",
+        model:         "openai/gpt-5-nano",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
-      },
-      {
-        label:         "DeepSeek V3 (OpenRouter)",
-        providerUrl:   OPENROUTER_URL,
-        model:         "deepseek/deepseek-chat",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
-        supportsTools: false,
-      },
-      {
-        label:         "Mistral Small (OpenRouter)",
-        providerUrl:   OPENROUTER_URL,
-        model:         "mistralai/mistral-small",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
-        supportsTools: false,
       },
       {
         label:         "GPT-4o Mini (OpenRouter)",
@@ -132,6 +112,20 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
         model:         "openai/gpt-4o-mini",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
+      },
+      {
+        label:         "DeepSeek V3 (OpenRouter)",
+        providerUrl:   OPENROUTER_URL,
+        model:         "deepseek/deepseek-v3.2",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
+        supportsTools: false,
+      },
+      {
+        label:         "Meta Llama (OpenRouter)",
+        providerUrl:   OPENROUTER_URL,
+        model:         "meta-llama/llama-3.3-70b-instruct",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
+        supportsTools: false,
       },
       {
         label:                   "Ollama Cloud GPT-OSS 120B (fallback)",
@@ -150,37 +144,37 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     allowedModes: ["query", "quiz", "teacher"],
     models: [
       {
-        label:         "Gemini 2.5 Pro (Google)",
-        providerUrl:   GOOGLE_URL,
-        model:         "gemini-2.5-pro-preview-06-05",
-        apiKeyEnv:     "GOOGLE_API_KEY",
-        supportsTools: true,
-      },
-      {
-        label:         "Gemini 2.5 Pro (OpenRouter)",
+        label:         "Grok 4 Fast",
         providerUrl:   OPENROUTER_URL,
-        model:         "google/gemini-2.5-pro-preview",
+        model:         "x-ai/grok-4-fast",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
       },
       {
-        label:         "Claude Haiku 4.5 (Anthropic)",
-        providerUrl:   ANTHROPIC_URL,
-        model:         "claude-haiku-4-5-20251001",
-        apiKeyEnv:     "ANTHROPIC_API_KEY",
+        label:         "Gemini 3 Flash",
+        providerUrl:   OPENROUTER_URL,
+        model:         "google/gemini-3-flash-preview",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
       },
       {
         label:         "Gemini 2.5 Flash (Google fallback)",
         providerUrl:   GOOGLE_URL,
-        model:         "gemini-2.5-flash-preview-05-20",
+        model:         "google/gemini-2.5-flash",
         apiKeyEnv:     "GOOGLE_API_KEY",
+        supportsTools: true,
+      },
+      {
+        label:         "Gemini 2.5 Flash",
+        providerUrl:   OPENROUTER_URL,
+        model:         "google/gemini-2.5-flash",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
       },
       {
         label:         "DeepSeek V3 (OpenRouter fallback)",
         providerUrl:   OPENROUTER_URL,
-        model:         "deepseek/deepseek-chat",
+        model:         "deepseek/deepseek-v3.2",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: false,
       },
@@ -189,7 +183,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
         providerUrl:             OLLAMA_URL,
         model:                   "gpt-oss:120b-cloud",
         apiKeyEnv:               "OLLAMA_API_KEY",
-        supportsTools:           false,
+        supportsTools:           true,
         requiresNDJSONTransform: true,
       },
     ],
@@ -204,24 +198,26 @@ export interface EmbeddingProvider {
   model:      string;
   apiKeyEnv:  string;
   dimensions: number;
+  /** Account ID required for Cloudflare Workers AI (will be appended to URL) */
+  accountIdEnv?: string;
 }
 
 export const EMBEDDING_PROVIDERS: EmbeddingProvider[] = [
   {
-    label:      "BGE-M3 (OpenRouter)",
+    label:        "BGE-M3 (Cloudflare Workers AI)",
+    url:          CLOUDFLARE_URL,  // Base URL, account ID will be appended in the embedding function
+    model:        "@cf/baai/bge-m3",
+    apiKeyEnv:    "CLOUDFLARE_API_KEY",
+    accountIdEnv: "CLOUDFLARE_ACCOUNT_ID",
+    dimensions:   1024,
+  },
+  {
+    label:      "BGE-M3 (OpenRouter fallback)",
     url:        "https://openrouter.ai/api/v1/embeddings",
     model:      "baai/bge-m3",
     apiKeyEnv:  "OPENROUTER_API_KEY",
     dimensions: 1024,
   },
-  // Add fallback embedding providers here when needed, e.g.:
-  // {
-  //   label:     "BGE-M3 (alternative provider)",
-  //   url:       "https://...",
-  //   model:     "baai/bge-m3",
-  //   apiKeyEnv: "ALT_EMBED_API_KEY",
-  //   dimensions: 1024,
-  // },
 ];
 
 // ── Context thresholds ────────────────────────────────────────────────────────

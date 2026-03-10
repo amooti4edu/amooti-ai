@@ -10,9 +10,9 @@ import { Separator } from "@/components/ui/separator";
 const Login = () => {
   const { role } = useParams<{ role: string }>();
   // Support three roles: student, teacher, school
-  const userRole = (["student", "teacher", "school"].includes(role || "") 
+  const userRole = (["student", "school"].includes(role || "") 
     ? role 
-    : "student") as "student" | "teacher" | "school";
+    : "student") as "student" | "school";
   const navigate = useNavigate();
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const { toast } = useToast();

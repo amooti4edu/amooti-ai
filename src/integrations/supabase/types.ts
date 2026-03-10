@@ -369,8 +369,10 @@ export type Database = {
           created_at: string | null
           display_name: string | null
           id: string
+          onboarding_completed: boolean
           role: string
           subject: string | null
+          term: string | null
           tier: string
           updated_at: string | null
         }
@@ -379,8 +381,10 @@ export type Database = {
           created_at?: string | null
           display_name?: string | null
           id: string
+          onboarding_completed?: boolean
           role?: string
           subject?: string | null
+          term?: string | null
           tier?: string
           updated_at?: string | null
         }
@@ -389,8 +393,10 @@ export type Database = {
           created_at?: string | null
           display_name?: string | null
           id?: string
+          onboarding_completed?: boolean
           role?: string
           subject?: string | null
+          term?: string | null
           tier?: string
           updated_at?: string | null
         }
@@ -569,6 +575,42 @@ export type Database = {
           },
         ]
       }
+      subscriptions: {
+        Row: {
+          created_at: string
+          current_period_end: string
+          current_period_start: string
+          id: string
+          pesapal_reference_id: string | null
+          status: string
+          tier: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          pesapal_reference_id?: string | null
+          status?: string
+          tier: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          pesapal_reference_id?: string | null
+          status?: string
+          tier?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       topic_edges: {
         Row: {
           created_at: string | null
@@ -703,6 +745,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      expire_subscriptions: { Args: never; Returns: undefined }
       get_interdisciplinary_links: {
         Args: { p_node_id: string }
         Returns: {

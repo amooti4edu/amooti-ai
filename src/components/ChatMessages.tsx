@@ -170,6 +170,19 @@ export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: 
                   components={{
                     img: CustomImage,
                     a: CustomLink,
+                    table: ({ children }) => <div className="my-2">{children}</div>,
+                    thead: ({ children }) => <>{children}</>,
+                    tbody: ({ children }) => <>{children}</>,
+                    tr: ({ children }) => {
+                      const cells = Array.isArray(children) ? children : [children];
+                      return (
+                        <p className="text-foreground/90 leading-relaxed">
+                          {cells}
+                        </p>
+                      );
+                    },
+                    th: ({ children }) => <strong className="text-foreground mr-2">{children}  •  </strong>,
+                    td: ({ children }) => <span className="mr-2">{children}  •  </span>,
                   }}
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[rehypeKatex, rehypeHighlight]}
