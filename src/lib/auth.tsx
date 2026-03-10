@@ -5,12 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 interface Profile {
   id: string;
   display_name: string | null;
-  role: string;
+  role: "student" | "teacher" | "school";
   tier: string;
   subject: string | null;
   class: string | null;
-  onboarding_completed?: boolean;
-  term?: string | null;
+  term: string | null;
+  onboarding_completed: boolean;
 }
 
 interface AuthContextType {
@@ -18,133 +18,161 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, role: "student" | "school", displayName?: string) => Promise<void>;
+
+  signUp: (
+    email: string,
+    password: string,
+    role: "student" | "teacher" | "school",
+    displayName?: string
+  ) => Promise<void>;
+
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
+  async function fetchProfile(userId: string) {
+    const { data, error } = await supabase
       .from("profiles")
-      .select("id, display_name, role, tier, subject, class, onboarding_completed, term")
+      .select("*")
       .eq("id", userId)
       .single();
-    if (data) setProfile(data as unknown as Profile);
-  };
+
+    if (!error && data) {
+      setProfile(data as Profile);
+    }
+  }
+
+  async function initializeAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    setSession(session);
+    setUser(session?.user ?? null);
+
+    if (session?.user) {
+      await fetchProfile(session.user.id);
+    }
+
+    setLoading(false);
+  }
 
   useEffect(() => {
-    // Set up listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+
+    initializeAuth();
+
+    const { data: { subscription } } =
+      supabase.auth.onAuthStateChange(async (_event, session) => {
+
         setSession(session);
         setUser(session?.user ?? null);
+
         if (session?.user) {
-          setTimeout(() => fetchProfile(session.user.id), 0);
+          await fetchProfile(session.user.id);
         } else {
           setProfile(null);
         }
-        setLoading(false);
-      }
-    );
 
-    // Then check existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      setLoading(false);
-    });
+      });
 
     return () => subscription.unsubscribe();
+
   }, []);
 
-  const signUp = async (email: string, password: string, role: "student" | "teacher" | "school", displayName?: string) => {
+  async function signUp(
+    email: string,
+    password: string,
+    role: "student" | "teacher" | "school",
+    displayName?: string
+  ) {
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: window.location.origin,
-        data: { role, display_name: displayName || email },
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: {
+          role,
+          display_name: displayName || email,
+        },
       },
     });
+
     if (error) throw error;
-  };
+  }
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  async function signIn(email: string, password: string) {
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
     if (error) throw error;
-  };
+  }
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setProfile(null);
-  };
-
-  const signInWithGoogle = async () => {
-    const redirectTo = `${window.location.origin}/auth/callback`;
-    const isCustomDomain =
-      !window.location.hostname.includes("lovable.app") &&
-      !window.location.hostname.includes("lovableproject.com");
-
-    if (isCustomDomain) {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-        },
-      });
-
-      if (error) throw error;
-      if (!data?.url) throw new Error("Unable to start Google sign in");
-
-      const oauthUrl = new URL(data.url);
-      const allowedHosts = [
-        new URL(import.meta.env.VITE_SUPABASE_URL).hostname,
-        "accounts.google.com",
-      ];
-
-      if (!allowedHosts.includes(oauthUrl.hostname)) {
-        throw new Error("Invalid OAuth redirect URL");
-      }
-
-      window.location.assign(data.url);
-      return;
-    }
+  async function signInWithGoogle() {
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
     if (error) throw error;
-  };
+  }
 
-  const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
-  };
+  async function signOut() {
+
+    await supabase.auth.signOut();
+    setProfile(null);
+
+  }
+
+  async function refreshProfile() {
+    if (user) {
+      await fetchProfile(user.id);
+    }
+  }
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signUp, signIn, signOut, signInWithGoogle, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        session,
+        user,
+        profile,
+        loading,
+        signUp,
+        signIn,
+        signOut,
+        signInWithGoogle,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
+
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+
+  if (!ctx) {
+    throw new Error("useAuth must be used within AuthProvider");
+  }
+
   return ctx;
+
 }
