@@ -32,7 +32,7 @@ const Login = () => {
         toast({ title: "Account created!", description: "Check your email to confirm your account." });
       } else {
         await signIn(email, password);
-        navigate("/auth/callback", { replace: true });
+        navigate("/chat", { replace: true });
       }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });

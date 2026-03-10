@@ -55,7 +55,7 @@ export default function ProfileEditor() {
           class: formData.class === 'none' ? null : formData.class,
           term: formData.term === 'none' ? null : formData.term,
         })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
