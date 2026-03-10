@@ -360,18 +360,13 @@ export async function buildQueryContext(
     return result;
   }
 
-  console.log(`[Context] Found ${(concepts as ConceptNode[]).length} concepts with embedded query`);
-
   // ── Sequential: full topic context + prerequisites + cross-subject ─────────
-  // These depend on having a topic/concept ID, so they run after the parallel batch
-  const topicContext = bestTopic
-    ? await sb.rpc("get_topic_context", { p_topic_id: bestTopic.topic_id })
-        .then((r: any) => r.data ?? null)
-        .catch(() => null)
-    : null;
+  const topicContext = await sb.rpc("get_topic_context", { p_topic_id: best.payload.topic_id })
+    .then((r: any) => r.data ?? null)
+    .catch(() => null);
 
   const rawConcepts = (topicContext?.concepts as ConceptNode[]) ?? [];
-  const anchor = bestConcept ?? (rawConcepts.length > 0 ? rawConcepts[0] : null);
+  const anchor = rawConcepts.length > 0 ? rawConcepts[0] : null;
 
   const [prerequisites, crossSubject] = await Promise.all([
     anchor
