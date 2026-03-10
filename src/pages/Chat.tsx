@@ -688,11 +688,9 @@ function ChatContent() {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          messages: getMessagesForBackend(allMessages).map((m) => ({ role: m.role, content: m.content })),
-          mode: "quiz", // Still in quiz mode for grading
           messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
           mode: "quiz",
-          grading: true, // Skip embedding — just grade the answers
+          grading: true,
           ...(difficulty ? { difficulty } : {}),
           ...(subject ? { subject } : {}),
           ...(userClass ? { class: userClass } : {}),
