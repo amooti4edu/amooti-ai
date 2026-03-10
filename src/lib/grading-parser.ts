@@ -136,6 +136,8 @@ export function parseGradingResponse(
 ): QuizResults {
   const totalQuestions = questions.length;
 
+  console.log("[Grading] Parsing grading response for", totalQuestions, "questions");
+
   // Extract score
   const scoreData = extractScore(gradingContent, totalQuestions);
 
@@ -153,6 +155,9 @@ export function parseGradingResponse(
   // Determine correct count: prefer score extraction, fall back to corrections
   const correctAnswers = scoreData?.correct ?? correctFromCorrections;
   const score = scoreData?.score ?? (totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0);
+
+  console.log("[Grading] Parsed score:", correctAnswers, "/", totalQuestions, `(${score.toFixed(1)}%)`);
+  console.log("[Grading] Found", corrections.length, "corrections");
 
   // Fill in any missing questions in corrections
   if (corrections.length < totalQuestions) {

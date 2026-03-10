@@ -173,6 +173,8 @@ export async function buildQueryContext(
     return { found: false, concepts: concepts as ConceptNode[], topics: topics as TopicNode[], studentProgress };
   }
 
+  console.log(`[Context] Found ${(concepts as ConceptNode[]).length} concepts with embedded query`);
+
   // ── Sequential: full topic context + prerequisites + cross-subject ─────────
   // These depend on having a topic/concept ID, so they run after the parallel batch
   const [topicContext, prerequisites, crossSubject] = await Promise.all([

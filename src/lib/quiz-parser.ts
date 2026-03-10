@@ -31,23 +31,36 @@ export function parseQuizJSON(content: string): QuizData | null {
       }
     }
 
-    if (!jsonStr) return null;
+    if (!jsonStr) {
+      console.debug("[QuizParser] JSON: No JSON block found in response");
+      return null;
+    }
 
     // Clean up common issues
     jsonStr = jsonStr.trim();
     // Remove trailing commas before } or ]
     jsonStr = jsonStr.replace(/,\s*([}\]])/g, "$1");
 
-    const parsed = JSON.parse(jsonStr);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      console.debug("[QuizParser] JSON: Parse error -", (parseErr as Error).message);
+      return null;
+    }
 
     if (!parsed.questions || !Array.isArray(parsed.questions)) {
+      console.debug("[QuizParser] JSON: No questions array found in parsed JSON");
       return null;
     }
 
     // Validate and transform questions
     const questions = parsed.questions
       .map((q: any, idx: number): QuizQuestion | null => {
-        if (!q.text && !q.question) return null;
+        if (!q.text && !q.question) {
+          console.debug(`[QuizParser] JSON: Question ${idx} missing text field`);
+          return null;
+        }
 
         const type = (q.type || "mcq") as QuestionType;
 
@@ -79,14 +92,17 @@ export function parseQuizJSON(content: string): QuizData | null {
       })
       .filter((q): q is QuizQuestion => q !== null);
 
-    if (questions.length === 0) return null;
+    if (questions.length === 0) {
+      console.debug("[QuizParser] JSON: No valid questions after filtering");
+      return null;
+    }
 
     return {
       questions,
       description: parsed.description,
     };
   } catch (e) {
-    console.error("[QuizParser] JSON parse failed:", e);
+    console.error("[QuizParser] JSON parse exception:", e);
     return null;
   }
 }
@@ -163,33 +179,52 @@ export function parseQuizMarkdown(content: string): QuizData | null {
       }
     }
 
-    if (questions.length === 0) return null;
+    if (questions.length === 0) {
+      console.debug("[QuizParser] Markdown: No questions parsed from markdown format");
+      return null;
+    }
 
+    console.log(`[QuizParser] Markdown: Parsed ${questions.length} questions in markdown format`);
     return { questions };
   } catch (e) {
-    console.error("[QuizParser] Markdown parse failed:", e);
+    console.error("[QuizParser] Markdown parse exception:", e);
     return null;
   }
 }
 
 /**
  * Main parser: try JSON first, then markdown
+ * Returns detailed error information for debugging
  */
 export function parseQuizResponse(content: string): QuizData | null {
+  const preview = content.slice(0, 300);
+  
+  console.log("[QuizParser] Attempting to parse quiz response...");
+  console.log("[QuizParser] Content preview:", preview);
+
   // Try JSON first
   let parsed = parseQuizJSON(content);
   if (parsed) {
-    console.log("[Quiz] Parsed JSON format with", parsed.questions.length, "questions");
+    console.log(
+      `[QuizParser] ✅ Successfully parsed JSON format with ${parsed.questions.length} questions`
+    );
     return parsed;
   }
+
+  console.log("[QuizParser] JSON parsing failed, attempting markdown...");
 
   // Fallback to markdown
   parsed = parseQuizMarkdown(content);
   if (parsed) {
-    console.log("[Quiz] Parsed markdown format with", parsed.questions.length, "questions");
+    console.log(
+      `[QuizParser] ✅ Successfully parsed markdown format with ${parsed.questions.length} questions`
+    );
     return parsed;
   }
 
-  console.warn("[Quiz] Could not parse quiz response. Content preview:", content.slice(0, 200));
+  console.warn(
+    "[QuizParser] ❌ PARSE FAILED: Could not parse as JSON or markdown",
+    "\nContent preview:", preview
+  );
   return null;
 }
