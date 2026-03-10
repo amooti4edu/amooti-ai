@@ -47,7 +47,7 @@ export default function Onboarding({ onComplete, isDevelopment = false }: Onboar
       const { error } = await supabase
         .from('profiles')
         .update({ role })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -78,7 +78,7 @@ export default function Onboarding({ onComplete, isDevelopment = false }: Onboar
       const { error } = await supabase
         .from('profiles')
         .update({ class: data.class, term: data.term })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -121,7 +121,7 @@ export default function Onboarding({ onComplete, isDevelopment = false }: Onboar
           tier,
           onboarding_completed: true,
         })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       if (profileError) throw profileError;
 
