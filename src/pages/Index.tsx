@@ -1,4 +1,6 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/lib/auth";
 
 // ─────────────────────────────────────────────
 // 🎛️  EASY EDIT ZONE — add / remove items here
@@ -90,6 +92,14 @@ const SchoolRow = ({ items, direction = "right", speed = 4 }: SchoolRowProps) =>
 };
 
 const Index = () => {
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect authenticated users to chat
+  useEffect(() => {
+    if (!loading && session) navigate("/chat");
+  }, [session, loading, navigate]);
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden flex flex-col">
       {/* Hero background */}
