@@ -10,7 +10,7 @@ import Login from "./pages/Login";
 import Chat from "./pages/Chat";
 import AuthCallback from "./pages/AuthCallback";
 
-import Onboarding from "./components/onboarding/onboarding";
+import Onboarding from "./components/onboarding/onboarding.tsx";
 
 const queryClient = new QueryClient();
 
