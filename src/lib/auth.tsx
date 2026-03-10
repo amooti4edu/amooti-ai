@@ -91,12 +91,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const isCustomDomain =
+      !window.location.hostname.includes("lovable.app") &&
+      !window.location.hostname.includes("lovableproject.com");
+
+    if (isCustomDomain) {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error("Unable to start Google sign in");
+
+      const oauthUrl = new URL(data.url);
+      const allowedHosts = [
+        new URL(import.meta.env.VITE_SUPABASE_URL).hostname,
+        "accounts.google.com",
+      ];
+
+      if (!allowedHosts.includes(oauthUrl.hostname)) {
+        throw new Error("Invalid OAuth redirect URL");
+      }
+
+      window.location.assign(data.url);
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/chat`,
+        redirectTo,
       },
     });
+
     if (error) throw error;
   };
 
