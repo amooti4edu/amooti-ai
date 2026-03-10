@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
+
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
@@ -15,6 +16,8 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 
+import Onboarding from "./components/onboarding/onboarding";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -25,16 +28,30 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/subjects" element={<Subjects />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
+
             <Route path="/login/:role" element={<Login />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+
+            <Route
+              path="/onboarding"
+              element={
+                <Onboarding
+                  onComplete={() => window.location.replace("/chat")}
+                />
+              }
+            />
+
             <Route path="/chat" element={<Chat />} />
+
             <Route path="*" element={<NotFound />} />
+
           </Routes>
         </AuthProvider>
       </BrowserRouter>
