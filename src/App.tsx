@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import Chat from "./pages/Chat";
 import About from "./pages/About";
 import Pricing from "./pages/Pricing";
