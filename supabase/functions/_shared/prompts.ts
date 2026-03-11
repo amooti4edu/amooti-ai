@@ -573,6 +573,92 @@ Periods: ${top?.periods ?? "—"}`;
 }
 
 
+// ── GRADING mode prompt ───────────────────────────────────────────────────────
+// Dedicated, compact prompt used only when grading = true in the request.
+// Replaces the full quiz generation prompt so the model focuses entirely on
+// assessing student answers — not generating new questions.
+
+export function buildGradingPrompt(ctx: BuiltContext): string {
+  const tc   = ctx.topicContext as any;
+  const top  = tc?.topic        as any;
+  const conc = (tc?.concepts    as any[]) ?? [];
+  const out  = (tc?.outcomes    as any[]) ?? [];
+
+  // Compact curriculum block — key concepts + outcomes for answer assessment
+  let curriculumBlock = "";
+
+  if (ctx.found) {
+    curriculumBlock = `Subject: ${ctx.subject}  |  Class: ${ctx.class}  |  Topic: ${ctx.topic}`;
+
+    if (conc.length) {
+      curriculumBlock += "\n\nKey concepts:\n" +
+        conc.slice(0, 6).map((c: any) =>
+          `• ${c.name}: ${c.definition}`
+        ).join("\n");
+    }
+
+    if (out.length) {
+      curriculumBlock += "\n\nLearning outcomes the student should meet:\n" +
+        out.map((o: any) =>
+          `  [${(o.blooms_level ?? "?").toUpperCase()}] ${o.outcome_text}`
+        ).join("\n");
+    }
+  }
+
+  const sep = "─".repeat(72);
+
+  const gradingRules = `You are grading a student's quiz answers. You have the quiz questions and the
+student's responses. Assess each answer against the Uganda O-Level curriculum
+context above where relevant.
+
+OUTPUT: Respond with ONLY a single JSON code fence — no preamble, no prose:
+
+\`\`\`json
+{
+  "score": 7,
+  "total": 10,
+  "percent": 70,
+  "passed": true,
+  "results": [
+    {
+      "number": 1,
+      "correct": true,
+      "your_answer": "The student's exact answer",
+      "correct_answer": "The correct answer",
+      "explanation": "Correct — osmosis is the movement of water across a semi-permeable membrane."
+    },
+    {
+      "number": 2,
+      "correct": false,
+      "your_answer": "The student's exact answer",
+      "correct_answer": "Meiosis",
+      "explanation": "Good try — meiosis produces gametes with half the chromosome number. Mitosis produces identical daughter cells."
+    }
+  ],
+  "remediation": null
+}
+\`\`\`
+
+Grading rules:
+  • Include ALL questions in "results" — never skip one
+  • "passed": true if percent ≥ 60
+  • "explanation": always present for every question — confirm why correct or explain the mistake
+  • "remediation": null if passed; if failed, a 2–4 sentence warm plain-text re-explanation
+    of the single hardest concept the student missed
+  • For short-answer and long-answer: award full credit for any answer that captures the
+    core idea, even if phrasing differs from the model answer
+  • Tone: "Good try — here is where it went wrong", never just "Wrong."
+  • Use curriculum outcomes and key concepts above to assess open-ended answers`;
+
+  return [
+    section("WHO YOU ARE", AMOOTI_IDENTITY),
+    ctx.found
+      ? section("CURRICULUM CONTEXT — use to assess open-ended answers", curriculumBlock)
+      : "",
+    section("GRADING RULES", gradingRules),
+  ].filter(Boolean).join("\n");
+}
+
 // ── Mode dispatcher ───────────────────────────────────────────────────────────
 
 export function buildPrompt(
@@ -580,7 +666,11 @@ export function buildPrompt(
   ctx:         BuiltContext,
   userRole     = "student",
   difficulty?: string,
+  grading      = false,
 ): string {
+  // Grading requests get a compact, assessment-focused prompt regardless of mode
+  if (grading) return buildGradingPrompt(ctx);
+
   switch (mode) {
     case "quiz":
       return buildQuizPrompt(ctx, difficulty);
