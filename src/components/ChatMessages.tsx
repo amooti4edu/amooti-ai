@@ -108,6 +108,19 @@ const CustomLink = ({
   );
 };
 
+// Detect a raw quiz JSON blob stored in message history.
+// This happens when parseQuizResponse fails mid-session and the raw response
+// gets written to messages/DB. Instead of rendering the fence, show a pill.
+function isQuizJson(content: string): boolean {
+  if (typeof content !== "string") return false;
+  const trimmed = content.trim();
+  // A quiz response always starts with a JSON fence or a bare { with "questions"
+  return (
+    (trimmed.startsWith("```") && trimmed.includes('"questions"')) ||
+    (trimmed.startsWith("{") && trimmed.includes('"questions"'))
+  );
+}
+
 export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: ChatMessagesProps) {
   // ── Empty state ────────────────────────────────────────────────────────────
   if (messages.length === 0 && !isLoading) {
@@ -152,6 +165,12 @@ export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: 
                 <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" />
                 <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
                 <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
+              </div>
+            ) : isQuizJson(msg.content) ? (
+              // Quiz JSON stored in history — render a clean pill instead of raw code
+              <div className="inline-flex items-center gap-2 rounded-full bg-accent/15 px-3 py-1.5 text-sm text-muted-foreground">
+                <span>🎯</span>
+                <span>Quiz generated — answer it above to see your results.</span>
               </div>
             ) : (
               <div className="prose prose-sm max-w-none text-foreground
