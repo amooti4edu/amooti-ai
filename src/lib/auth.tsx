@@ -5,12 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 interface Profile {
   id: string;
   display_name: string | null;
-  role: "student" | "teacher" | "school";
+  role: string;
   tier: string;
   subject: string | null;
   class: string | null;
-  term: string | null;
-  onboarding_completed: boolean;
 }
 
 interface AuthContextType {
@@ -18,185 +16,94 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-
-  signUp: (
-    email: string,
-    password: string,
-    role: "student" | "teacher" | "school",
-    displayName?: string
-  ) => Promise<void>;
-
+  signUp: (email: string, password: string, role: "student" | "school", displayName?: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-
-  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function fetchProfile(userId: string) {
-    const { data, error } = await supabase
+  const fetchProfile = async (userId: string) => {
+    const { data } = await supabase
       .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
+      .select("id, display_name, role, tier, subject, class")
+      .eq("id", userId)
       .single();
-
-    if (!error && data) {
-      setProfile(data as Profile);
-    } else {
-      // If no profile exists, create a default one
-      const defaultProfile = {
-        user_id: userId,
-        display_name: null,
-        role: "student" as const,
-        tier: "free",
-        subject: null,
-        class: null,
-        term: null,
-        onboarding_completed: false,
-      };
-      const { error: insertError } = await supabase
-        .from("profiles")
-        .insert(defaultProfile);
-      if (!insertError) {
-        // Fetch again to get the created profile with id
-        const { data: newData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("user_id", userId)
-          .single();
-        if (newData) setProfile(newData as Profile);
-      }
-    }
-  }
-
-  async function initializeAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
-
-    setSession(session);
-    setUser(session?.user ?? null);
-
-    if (session?.user) {
-      await fetchProfile(session.user.id);
-    }
-
-    setLoading(false);
-  }
+    if (data) setProfile(data as unknown as Profile);
+  };
 
   useEffect(() => {
-
-    initializeAuth();
-
-    const { data: { subscription } } =
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
-
         if (session?.user) {
-          await fetchProfile(session.user.id);
+          setTimeout(() => fetchProfile(session.user.id), 0);
         } else {
           setProfile(null);
         }
+        setLoading(false);
+      }
+    );
 
-      });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) fetchProfile(session.user.id);
+      setLoading(false);
+    });
 
     return () => subscription.unsubscribe();
-
   }, []);
 
-  async function signUp(
-    email: string,
-    password: string,
-    role: "student" | "teacher" | "school",
-    displayName?: string
-  ) {
-
+  const signUp = async (email: string, password: string, role: "student" | "school", displayName?: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: {
-          role,
-          display_name: displayName || email,
-        },
+        emailRedirectTo: window.location.origin,
+        data: { role, display_name: displayName || email },
       },
     });
-
     if (error) throw error;
-  }
+  };
 
-  async function signIn(email: string, password: string) {
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-  }
+  };
 
-  async function signInWithGoogle() {
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setProfile(null);
+  };
 
+  const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/chat`,
       },
     });
-
     if (error) throw error;
-  }
-
-  async function signOut() {
-
-    await supabase.auth.signOut();
-    setProfile(null);
-
-  }
-
-  async function refreshProfile() {
-    if (user) {
-      await fetchProfile(user.id);
-    }
-  }
+  };
 
   return (
-    <AuthContext.Provider
-      value={{
-        session,
-        user,
-        profile,
-        loading,
-        signUp,
-        signIn,
-        signOut,
-        signInWithGoogle,
-        refreshProfile,
-      }}
-    >
+    <AuthContext.Provider value={{ session, user, profile, loading, signUp, signIn, signOut, signInWithGoogle }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-
   const ctx = useContext(AuthContext);
-
-  if (!ctx) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
-
 }
