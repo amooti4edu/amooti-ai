@@ -18,12 +18,88 @@ import {
   streamFinalAnswer,
   sanitizeMarkdown,
 } from "../_shared/streaming.ts";
-import { TIER_CONFIG } from "../_shared/models.config.ts";
+import {
+  TIER_CONFIG,
+  RATE_LIMIT_WINDOW_MS,
+  type Tier,
+} from "../_shared/models.config.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// ── Document cost ─────────────────────────────────────────────────────────────
+// Each teacher document (scheme, lesson plan, assessment) counts as this many
+// questions toward the user's daily quota. Generating a full document is
+// significantly more expensive than a single chat query.
+const DOCUMENT_QUOTA_COST = 5;
+
+// ── Rate limiter (teacher requests) ──────────────────────────────────────────
+// Mirrors the logic in chat/index.ts. Teacher documents cost DOCUMENT_QUOTA_COST
+// units so we decrement by that amount.
+
+async function checkAndDeductQuota(
+  userId: string,
+  sb:     any,
+  tier:   Tier,
+): Promise<{ allowed: boolean; reason?: string }> {
+  const now        = new Date();
+  const dailyLimit = TIER_CONFIG[tier].dailyLimit;
+
+  try {
+    const { data } = await sb
+      .from("rate_limits")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+
+    const today = now.toISOString().slice(0, 10);
+
+    if (data) {
+      const windowStart    = new Date(data.window_start);
+      const isWithinWindow = now.getTime() - windowStart.getTime() < RATE_LIMIT_WINDOW_MS;
+
+      // Burst check — count a document as 1 burst event regardless of cost
+      if (isWithinWindow && data.burst_count >= 3) {
+        return { allowed: false, reason: "Too many requests. Please wait a moment." };
+      }
+
+      const lastDay    = data.last_day ?? "";
+      const dailyCount = lastDay === today ? (data.daily_count ?? 0) : 0;
+
+      if (dailyCount + DOCUMENT_QUOTA_COST > dailyLimit) {
+        return {
+          allowed: false,
+          reason: `Daily limit reached. Generating a document uses ${DOCUMENT_QUOTA_COST} of your daily quota.`,
+        };
+      }
+
+      await sb.from("rate_limits").update({
+        burst_count:  isWithinWindow ? data.burst_count + 1 : 1,
+        window_start: isWithinWindow ? data.window_start : now.toISOString(),
+        daily_count:  lastDay === today ? dailyCount + DOCUMENT_QUOTA_COST : DOCUMENT_QUOTA_COST,
+        last_day:     today,
+      }).eq("user_id", userId);
+
+    } else {
+      // First request
+      await sb.from("rate_limits").insert({
+        user_id:      userId,
+        burst_count:  1,
+        window_start: now.toISOString(),
+        daily_count:  DOCUMENT_QUOTA_COST,
+        last_day:     today,
+      });
+    }
+
+    return { allowed: true };
+
+  } catch (err) {
+    console.warn("[RateLimit/Teacher] Error — allowing request:", err);
+    return { allowed: true };
+  }
+}
 
 // ── JSON fence extractor ──────────────────────────────────────────────────────
 // LLM wraps its response in ```json ... ``` — strip the fence before parsing.
@@ -134,7 +210,7 @@ serve(async (req) => {
       .eq("id", user.id)
       .single();
 
-    if (profile?.tier !== "premium") {
+    if (profile?.tier !== "premium" && profile?.tier !== "enterprise") {
       return new Response(
         JSON.stringify({
           error: "Teacher mode requires a Premium plan (15,000 UGX/month).",
@@ -143,7 +219,17 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[Teacher] User: ${user.id} | Role: ${profile?.role}`);
+    // ── Quota check — document costs DOCUMENT_QUOTA_COST daily units ─────────
+    const userTier = (profile?.tier as Tier) ?? "premium";
+    const { allowed, reason } = await checkAndDeductQuota(user.id, sb, userTier);
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ error: reason }),
+        { status: 429, headers: { ...CORS, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`[Teacher] User: ${user.id} | Tier: ${userTier} | Role: ${profile?.role}`);
 
     // ── Parse request ────────────────────────────────────────────────────────
     const {
