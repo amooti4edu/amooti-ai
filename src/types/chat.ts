@@ -8,7 +8,12 @@ export type Tier = "free" | "basic" | "premium" | "enterprise";
 export type Difficulty = "low" | "medium" | "high";
 
 export interface TeacherDoc {
-  content: string;
+  // The teacher endpoint returns a structured JSON document object.
+  // Typed as `any` because the shape varies by document type
+  // (scheme_of_work, lesson_plan, assessment, topic_summary, progress_report).
+  // TeacherResponse.tsx routes rendering based on doc.content.type.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content: any;
   downloadUrl: string;
   expiresAt: number; // timestamp ms
 }
