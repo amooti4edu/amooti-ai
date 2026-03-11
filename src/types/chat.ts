@@ -4,7 +4,7 @@ export interface Message {
 }
 
 export type ChatMode = "query" | "quiz" | "teacher";
-export type Tier = "free" | "basic" | "premium";
+export type Tier = "free" | "basic" | "premium" | "enterprise";
 export type Difficulty = "low" | "medium" | "high";
 
 export interface TeacherDoc {
@@ -22,4 +22,5 @@ export const TIER_DAILY_LIMITS: Record<Tier, number> = {
   free: 5,
   basic: 10,
   premium: 20,
+  enterprise: 100,
 };
