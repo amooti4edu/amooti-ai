@@ -4,7 +4,6 @@ import { Menu, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useQuotaSync } from "@/hooks/useQuotaSync";
 import { supabase } from "@/integrations/supabase/client";
-import Onboarding from "@/components/onboarding/Onboarding";
 import ProfileEditor from "@/components/ProfileEditor";
 import { ChatMessages } from "@/components/ChatMessages";
 import { ChatInput } from "@/components/ChatInput";
@@ -34,7 +33,7 @@ const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
 
 const THINKING_PHRASES = [
   "Thinking...",
-  "planning research...",
+  "Planning research...",
   "Checking the syllabus...",
   "Validating findings...",
   "Putting it all together...",
@@ -45,7 +44,7 @@ const THINKING_PHRASES = [
 
 const TEACHER_PHRASES = [
   "Thinking...",
-  "planning research...",
+  "Planning research...",
   "Checking the syllabus...",
   "Validating findings...",
   "Generating your document…",
@@ -54,60 +53,20 @@ const TEACHER_PHRASES = [
   "Almost ready…",
 ];
 
-/**
- * Chat page component wrapped with onboarding protection.
- * If user hasn't completed onboarding, shows Onboarding flow.
- */
+// ── Single default export — no onboarding wrapper ─────────────────────────
 export default function Chat() {
-  const { session, profile, loading } = useAuth();
-  const navigate = useNavigate();
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
-
-  // Auth redirect
-  useEffect(() => {
-    if (!loading && !session) navigate("/");
-  }, [session, loading, navigate]);
-
-  // Show loading
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-900">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
-  }
-
-  // Check if onboarding is needed
-  if (!profile?.onboarding_completed && !onboardingComplete) {
-    return (
-      <Onboarding
-        onComplete={() => setOnboardingComplete(true)}
-        isDevelopment={true}
-      />
-    );
-  }
-
-  // Onboarding complete - show chat
-  return <ChatContent />;
-}
-
-/**
- * Actual chat implementation (was previously the default export)
- */
-function ChatContent() {
-  const { session, loading } = useAuth();
+  const { session, profile, loading, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
-  // Chat state
-  const [messages, setMessages]                       = useState<Message[]>([]);
-  const [isLoading, setIsLoading]                     = useState(false);
-  const [loadingPhrase, setLoadingPhrase]             = useState(THINKING_PHRASES[0]);
-  const [sidebarOpen, setSidebarOpen]                 = useState(false);
-  const [conversations, setConversations]             = useState<any[]>([]);
+  // ── Chat state ─────────────────────────────────────────────────────────
+  const [messages, setMessages]                         = useState<Message[]>([]);
+  const [isLoading, setIsLoading]                       = useState(false);
+  const [loadingPhrase, setLoadingPhrase]               = useState(THINKING_PHRASES[0]);
+  const [sidebarOpen, setSidebarOpen]                   = useState(false);
+  const [conversations, setConversations]               = useState<any[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [hasOlderMessages, setHasOlderMessages]       = useState(false);
 
-  // New state for modes & tiers
+  // ── Mode / tier state ──────────────────────────────────────────────────
   const [mode, setMode]             = useState<ChatMode>("query");
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>(undefined);
   const [userTier, setUserTier]     = useState<Tier>("free");
@@ -117,24 +76,24 @@ function ChatContent() {
   const [subject, setSubject]       = useState<string | undefined>(undefined);
   const [userClass, setUserClass]   = useState<string | undefined>(undefined);
 
-  // Quiz state
+  // ── Quiz state ─────────────────────────────────────────────────────────
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
   const [quizLoading, setQuizLoading] = useState(false);
 
   const bottomRef      = useRef<HTMLDivElement>(null!);
   const phraseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Auth redirect ──────────────────────────────────────────────────────────
+  // ── Auth redirect ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!loading && !session) navigate("/");
   }, [session, loading, navigate]);
 
-  // ── Auto-scroll ────────────────────────────────────────────────────────────
+  // ── Auto-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, teacherDoc]);
 
-  // ── Fetch conversations ────────────────────────────────────────────────────
+  // ── Fetch conversations ────────────────────────────────────────────────
   useEffect(() => {
     if (!session) return;
     supabase
@@ -145,7 +104,8 @@ function ChatContent() {
       .then(({ data }) => { if (data) setConversations(data); });
   }, [session]);
 
-  // ── Fetch user tier from profile ───────────────────────────────────────────
+  // ── Initial profile fetch ──────────────────────────────────────────────
+  // Reads tier / subject / class from profiles table on mount.
   useEffect(() => {
     if (!session) return;
     supabase
@@ -158,12 +118,42 @@ function ChatContent() {
           const d = data as any;
           setUserTier((d.tier as Tier) ?? "free");
           if (d.subject) setSubject(d.subject);
-          if (d.class) setUserClass(d.class);
+          if (d.class)   setUserClass(d.class);
         }
       });
   }, [session]);
 
-  // ── Load messages for active conversation ──────────────────────────────────
+  // ── Realtime: re-sync tier/subject/class when ProfileEditor saves ──────
+  // This means the moment the user saves their profile (including a future
+  // tier upgrade), Chat picks it up without requiring a page reload.
+  useEffect(() => {
+    if (!session) return;
+
+    const channel = supabase
+      .channel(`profile-changes-${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event:  "UPDATE",
+          schema: "public",
+          table:  "profiles",
+          filter: `id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          if (updated.tier)    setUserTier(updated.tier as Tier);
+          if (updated.subject) setSubject(updated.subject);
+          if (updated.class)   setUserClass(updated.class);
+          // Also keep the auth context profile fresh
+          refreshProfile?.();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session, refreshProfile]);
+
+  // ── Load messages for active conversation ──────────────────────────────
   useEffect(() => {
     if (!activeConversationId) return;
     setTeacherDoc(null);
@@ -173,29 +163,23 @@ function ChatContent() {
       .eq("conversation_id", activeConversationId)
       .order("created_at", { ascending: true })
       .then(({ data }) => {
-        if (data) {
-          const allMessages = data.map((m) => ({ 
-            role: m.role as "user" | "assistant", 
-            content: m.content 
-          }));
-          
-          // Keep last 30 messages in display, mark if older messages exist
-          const MAX_DISPLAY = 30;
-          setHasOlderMessages(allMessages.length > MAX_DISPLAY);
-          
-          if (allMessages.length > MAX_DISPLAY) {
-            setMessages(allMessages.slice(-MAX_DISPLAY));
-            console.log(
-              `[Messages] Loaded ${MAX_DISPLAY}/${allMessages.length} messages (showing newest)`
-            );
-          } else {
-            setMessages(allMessages);
-          }
+        if (!data) return;
+        const allMessages = data.map((m) => ({
+          role:    m.role as "user" | "assistant",
+          content: m.content,
+        }));
+
+        // Keep last 30 messages in display to avoid token overflow
+        const MAX_DISPLAY = 30;
+        if (allMessages.length > MAX_DISPLAY) {
+          setMessages(allMessages.slice(-MAX_DISPLAY));
+        } else {
+          setMessages(allMessages);
         }
       });
   }, [activeConversationId]);
 
-  // ── Loading phrase cycler ──────────────────────────────────────────────────
+  // ── Loading phrase cycler ──────────────────────────────────────────────
   const startLoadingPhrases = (phrases: string[]) => {
     setLoadingPhrase(phrases[0]);
     let idx = 0;
@@ -212,7 +196,7 @@ function ChatContent() {
     }
   };
 
-  // ── Sidebar handlers ───────────────────────────────────────────────────────
+  // ── Sidebar handlers ───────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveConversationId(null);
     setMessages([]);
@@ -225,10 +209,11 @@ function ChatContent() {
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
     setApiError(null);
+    setQuizSession(null);
     setSidebarOpen(false);
   };
 
-  // ── Error parser ───────────────────────────────────────────────────────────
+  // ── Error parser ───────────────────────────────────────────────────────
   const parseApiError = async (resp: Response): Promise<ApiError> => {
     let message = "Something went wrong. Please try again.";
     try {
@@ -238,29 +223,23 @@ function ChatContent() {
 
     if (resp.status === 429) return { type: "rate_limit", message };
     if (resp.status === 403) return { type: "forbidden", message };
-    if (resp.status === 401) return { type: "auth", message };
+    if (resp.status === 401) return { type: "auth",      message };
     return { type: "server", message };
   };
 
-  // ── Get messages for backend (limit to last 30 to prevent token overflow) ──
+  // ── Limit messages sent to backend ────────────────────────────────────
   const getMessagesForBackend = (msgs: Message[]): Message[] => {
     const MAX_CONTEXT = 30;
-    if (msgs.length > MAX_CONTEXT) {
-      console.log(
-        `[Backend] Limiting messages from ${msgs.length} to ${MAX_CONTEXT} (token limit)`
-      );
-      return msgs.slice(-MAX_CONTEXT);
-    }
-    return msgs;
+    return msgs.length > MAX_CONTEXT ? msgs.slice(-MAX_CONTEXT) : msgs;
   };
 
-  // ── Send handler ───────────────────────────────────────────────────────────
+  // ── Send handler ───────────────────────────────────────────────────────
   const handleSend = async (content: string) => {
     if (!session || isLoading) return;
     setApiError(null);
     setTeacherDoc(null);
 
-    const userMessage: Message = { role: "user", content };
+    const userMessage: Message   = { role: "user", content };
     const allMessages: Message[] = [...messages, userMessage];
     setMessages(allMessages);
     setIsLoading(true);
@@ -269,7 +248,7 @@ function ChatContent() {
     let convId = activeConversationId;
 
     try {
-      // ── Persist conversation ──────────────────────────────────────────────
+      // ── Persist conversation ────────────────────────────────────────
       if (!convId) {
         const { data } = await supabase
           .from("conversations")
@@ -284,38 +263,35 @@ function ChatContent() {
       }
 
       if (convId) {
-        console.log("[DB] Persisting user message");
         await supabase.from("messages").insert({
           conversation_id: convId,
-          role: "user",
+          role:    "user",
           content,
         });
-        console.log("[DB] ✓ User message persisted");
       }
 
-      // ── Auth token ────────────────────────────────────────────────────────
+      // ── Auth token ──────────────────────────────────────────────────
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) throw new Error("No access token");
 
-      // ── Branch: Teacher mode vs Chat mode ─────────────────────────────────
+      // ── Branch: Teacher mode vs Chat mode ───────────────────────────
       if (mode === "teacher") {
         await handleTeacherRequest(allMessages, accessToken, convId);
       } else {
-        await handleChatRequest(allMessages, accessToken, convId, content);
+        await handleChatRequest(allMessages, accessToken, convId);
       }
 
-      // Refresh quota after successful request
       quota.invalidate();
 
     } catch (err: any) {
       console.error("Chat error:", err);
       setMessages((prev) => {
-        const last = prev[prev.length - 1];
         const errorMessage: Message = {
-          role: "assistant",
+          role:    "assistant",
           content: "Sorry, something went wrong. Please try again.",
         };
+        const last = prev[prev.length - 1];
         return last?.role === "assistant"
           ? [...prev.slice(0, -1), errorMessage]
           : [...prev, errorMessage];
@@ -326,20 +302,17 @@ function ChatContent() {
     }
   };
 
-  // ── Teacher mode handler (non-streaming JSON) ──────────────────────────────
+  // ── Teacher mode handler (non-streaming JSON) ──────────────────────────
   const handleTeacherRequest = async (
     allMessages: Message[],
     accessToken: string,
     convId: string | null,
   ) => {
-    // ── Defensive tier check ────────────────────────────────────────────────
-    if (userTier !== "premium") {
+    if (userTier !== "premium" && userTier !== "enterprise") {
       setApiError({
-        type: "forbidden",
+        type:    "forbidden",
         message: "Teacher mode requires a Premium plan (15,000 UGX/month).",
       });
-      stopLoadingPhrases();
-      setIsLoading(false);
       return;
     }
 
@@ -347,11 +320,14 @@ function ChatContent() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+        Authorization:  `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
-        messages: getMessagesForBackend(allMessages).map((m) => ({ role: m.role, content: m.content })),
-        ...(subject ? { subject } : {}),
+        messages: getMessagesForBackend(allMessages).map((m) => ({
+          role:    m.role,
+          content: m.content,
+        })),
+        ...(subject   ? { subject }       : {}),
         ...(userClass ? { class: userClass } : {}),
       }),
       signal: AbortSignal.timeout(60_000),
@@ -368,39 +344,28 @@ function ChatContent() {
     stopLoadingPhrases();
 
     setTeacherDoc({
-      content: json.content,
+      content:     json.content,
       downloadUrl: json.download_url,
-      expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+      expiresAt:   Date.now() + (json.expires_in ?? 3600) * 1000,
     });
 
-    // Add the markdown content as an assistant message
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: json.content },
-    ]);
+    setMessages((prev) => [...prev, { role: "assistant", content: json.content }]);
 
-    // Persist
     if (convId) {
       await supabase.from("messages").insert({
         conversation_id: convId,
-        role: "assistant",
+        role:    "assistant",
         content: json.content,
       });
-      supabase
-        .from("conversations")
-        .select("*")
-        .eq("user_id", session!.user.id)
-        .order("updated_at", { ascending: false })
-        .then(({ data }) => { if (data) setConversations(data); });
+      refreshConversations();
     }
   };
 
-  // ── Chat mode handler (SSE streaming with retry) ────────────────────────────
+  // ── Chat mode handler (SSE streaming with retry) ───────────────────────
   const handleChatRequest = async (
     allMessages: Message[],
     accessToken: string,
     convId: string | null,
-    _content: string,
   ) => {
     const MAX_RETRIES = 3;
     let lastError: Error | null = null;
@@ -408,27 +373,19 @@ function ChatContent() {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const messagesForBackend = getMessagesForBackend(allMessages);
-        console.log("[ASK] Sending to backend", {
-          mode,
-          messageCount: messagesForBackend.length,
-          subject,
-          class: userClass,
-          difficulty,
-          attempt,
-        });
 
         const resp = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
+            Authorization:  `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
             messages: messagesForBackend.map((m) => ({ role: m.role, content: m.content })),
             mode,
-            ...(difficulty && mode === "quiz" ? { difficulty } : {}),
-            ...(subject ? { subject } : {}),
-            ...(userClass ? { class: userClass } : {}),
+            ...(difficulty && mode === "quiz" ? { difficulty }       : {}),
+            ...(subject                       ? { subject }          : {}),
+            ...(userClass                     ? { class: userClass } : {}),
           }),
         });
 
@@ -441,21 +398,31 @@ function ChatContent() {
 
         if (!resp.body) throw new Error("Response has no body");
 
-        // ── Read SSE stream ─────────────────────────────────────────────────
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let assistantContent = "";
-        let textBuffer = "";
-        let assistantBubbleAdded = false;
-        const isQuizMode = mode === "quiz";
+        // ── Read SSE stream ───────────────────────────────────────────
+        const reader   = resp.body.getReader();
+        const decoder  = new TextDecoder();
 
-        // In quiz mode, show loading overlay instead of streaming text
+        // FIX: textBuffer lives OUTSIDE the read loop so partial lines
+        // accumulate correctly across chunks.
+        let textBuffer           = "";
+        let assistantContent     = "";
+        let assistantBubbleAdded = false;
+        const isQuizMode         = mode === "quiz";
+
         if (isQuizMode) {
-          console.log("[QUIZ] Generating quiz with difficulty:", difficulty);
           setQuizLoading(true);
           stopLoadingPhrases();
         }
 
+        // FIX: on retry, remove any ghost assistant bubble from prior attempt
+        if (attempt > 1) {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            return last?.role === "assistant" ? prev.slice(0, -1) : prev;
+          });
+        }
+
+        readLoop:
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -472,16 +439,14 @@ function ChatContent() {
             if (!line.startsWith("data: ")) continue;
 
             const jsonStr = line.slice(6).trim();
-            if (jsonStr === "[DONE]") break;
+            if (jsonStr === "[DONE]") break readLoop;
 
             try {
               const parsed = JSON.parse(jsonStr);
-              const delta = parsed.choices?.[0]?.delta?.content;
+              const delta  = parsed.choices?.[0]?.delta?.content;
               if (delta) {
-                console.log("[SSE] Parsed delta:", delta.slice(0, 50) + (delta.length > 50 ? "..." : ""));
                 assistantContent += delta;
 
-                // Only show streaming text for non-quiz modes
                 if (!isQuizMode) {
                   if (!assistantBubbleAdded) {
                     assistantBubbleAdded = true;
@@ -490,19 +455,23 @@ function ChatContent() {
                   }
                   setMessages((prev) => {
                     const updated = [...prev];
-                    updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+                    updated[updated.length - 1] = {
+                      role:    "assistant",
+                      content: assistantContent,
+                    };
                     return updated;
                   });
                 }
               }
             } catch {
+              // Incomplete JSON chunk — put the line back and wait for more data
               textBuffer = line + "\n" + textBuffer;
               break;
             }
           }
         }
 
-        // ── Successfully streamed response ──────────────────────────────────
+        // ── Empty response guard ──────────────────────────────────────
         if (!assistantContent) {
           setQuizLoading(false);
           setMessages((prev) => [
@@ -512,69 +481,53 @@ function ChatContent() {
           return;
         }
 
-        // ── Quiz mode: Parse quiz response ──────────────────────────────────
+        // ── Quiz mode: parse and start quiz session ───────────────────
         if (isQuizMode) {
           const quizData = parseQuizResponse(assistantContent);
           setQuizLoading(false);
           if (quizData && quizData.questions.length > 0) {
-            // IMPORTANT: Store the full quiz content so the grading model can see the questions
             setMessages((prev) => [
               ...prev,
               { role: "assistant", content: assistantContent },
             ]);
             setQuizSession({
-              questionSet: quizData.questions,
-              currentIndex: 0,
+              questionSet:    quizData.questions,
+              currentIndex:   0,
               studentAnswers: [],
-              isSubmitted: false,
+              isSubmitted:    false,
             });
-            console.log("[Quiz] Initialized session with", quizData.questions.length, "questions");
           } else {
-            console.warn("[Quiz] Failed to parse quiz — showing raw response to user");
-            setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
+            console.warn("[Quiz] Failed to parse quiz — showing raw response");
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant", content: assistantContent },
+            ]);
           }
         }
 
-        // ── Persist ─────────────────────────────────────────────────────────
+        // ── Persist assistant message ─────────────────────────────────
         if (convId) {
-          console.log("[DB] Persisting assistant response");
           await supabase.from("messages").insert({
             conversation_id: convId,
-            role: "assistant",
+            role:    "assistant",
             content: assistantContent,
           });
-          console.log("[DB] ✓ Assistant message persisted");
-          supabase
-            .from("conversations")
-            .select("*")
-            .eq("user_id", session!.user.id)
-            .order("updated_at", { ascending: false })
-            .then(({ data }) => { if (data) setConversations(data); });
+          refreshConversations();
         }
 
-        // ── Invalidate quota and refresh ────────────────────────────────────
-        console.log("[Quota] Invalidating quota cache");
         quota.invalidate();
-        console.log("[Quota] ✓ Quota invalidated");
-
-        // Success! Return early
-        return;
+        return; // success — exit retry loop
 
       } catch (err: any) {
         lastError = err;
-        console.warn(
-          `[SSE] Attempt ${attempt}/${MAX_RETRIES} failed:`,
-          err.message
-        );
+        console.warn(`[SSE] Attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
 
-        // Don't retry on last attempt
-        if (attempt === MAX_RETRIES) {
-          break;
+        if (attempt < MAX_RETRIES) {
+          // Exponential backoff: 1s → 2s → 4s
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt - 1) * 1000)
+          );
         }
-
-        // Exponential backoff: 1s, 2s, 4s
-        const delayMs = Math.pow(2, attempt - 1) * 1000;
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
 
@@ -584,27 +537,40 @@ function ChatContent() {
     setMessages((prev) => [
       ...prev,
       {
-        role: "assistant",
+        role:    "assistant",
         content: `Sorry, I couldn't get a response after ${MAX_RETRIES} attempts. Please try again in a moment.`,
       },
     ]);
   };
 
-  if (loading) return null;
+  // ── Refresh conversation list (safe — uses closure over session) ───────
+  const refreshConversations = () => {
+    const userId = session?.user.id;
+    if (!userId) return;
+    supabase
+      .from("conversations")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .then(({ data }) => { if (data) setConversations(data); });
+  };
 
-  // ── Quiz handlers ──────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-900">
+        <div className="text-white">Loading…</div>
+      </div>
+    );
+  }
+
+  // ── Quiz handlers ──────────────────────────────────────────────────────
   const handleQuizAnswerChange = (questionId: string, answer: string) => {
     if (!quizSession) return;
-
-    console.log("[Quiz] Answer changed - Question:", questionId, "Answer:", answer);
-
     setQuizSession((prev) => {
       if (!prev) return prev;
-
       const existingIndex = prev.studentAnswers.findIndex(
         (a) => a.questionId === questionId
       );
-
       let updatedAnswers: StudentAnswer[];
       if (existingIndex >= 0) {
         updatedAnswers = [...prev.studentAnswers];
@@ -612,88 +578,77 @@ function ChatContent() {
       } else {
         updatedAnswers = [...prev.studentAnswers, { questionId, answer }];
       }
-
-      return {
-        ...prev,
-        studentAnswers: updatedAnswers,
-      };
+      return { ...prev, studentAnswers: updatedAnswers };
     });
   };
 
-  const handleQuizNext = () => {
+  const handleQuizNext = () =>
     setQuizSession((prev) => {
       if (!prev || prev.currentIndex >= prev.questionSet.length - 1) return prev;
       return { ...prev, currentIndex: prev.currentIndex + 1 };
     });
-  };
 
-  const handleQuizPrevious = () => {
+  const handleQuizPrevious = () =>
     setQuizSession((prev) => {
       if (!prev || prev.currentIndex === 0) return prev;
       return { ...prev, currentIndex: prev.currentIndex - 1 };
     });
-  };
 
-  const handleQuizNavigate = (index: number) => {
+  const handleQuizNavigate = (index: number) =>
     setQuizSession((prev) => {
       if (!prev || index < 0 || index >= prev.questionSet.length) return prev;
       return { ...prev, currentIndex: index };
     });
-  };
 
-  const handleQuizClose = () => {
-    setQuizSession(null);
-  };
+  const handleQuizClose = () => setQuizSession(null);
 
   const handleQuizSubmit = async () => {
     if (!quizSession || !session) return;
-
-    console.log("[Quiz] Submitting quiz with", quizSession.studentAnswers.length, "answers");
 
     setIsLoading(true);
     startLoadingPhrases(THINKING_PHRASES);
 
     try {
-      // Build a detailed grading request that includes BOTH questions AND answers
-      const answersWithQuestions = quizSession.questionSet.map((q) => {
-        const studentAns = quizSession.studentAnswers.find((a) => a.questionId === q.id);
-        let questionText = `Q${q.number}. ${q.text}`;
-        if (q.options) {
-          questionText += "\n" + q.options.map((o) => `  ${o.id}) ${o.text}`).join("\n");
-        }
-        questionText += `\nStudent's answer: ${studentAns?.answer ?? "(no answer)"}`;
-        return questionText;
-      }).join("\n\n");
-
-      console.log("[Grading] Sending grading request to backend");
+      const answersWithQuestions = quizSession.questionSet
+        .map((q) => {
+          const studentAns = quizSession.studentAnswers.find(
+            (a) => a.questionId === q.id
+          );
+          let questionText = `Q${q.number}. ${q.text}`;
+          if (q.options) {
+            questionText +=
+              "\n" + q.options.map((o) => `  ${o.id}) ${o.text}`).join("\n");
+          }
+          questionText += `\nStudent's answer: ${studentAns?.answer ?? "(no answer)"}`;
+          return questionText;
+        })
+        .join("\n\n");
 
       const quizResultMessage: Message = {
-        role: "user",
+        role:    "user",
         content: `Here are the quiz questions and my answers. Please grade each one, tell me which are correct/incorrect, give the correct answer for wrong ones, and explain why.\n\n${answersWithQuestions}`,
       };
 
       const allMessages = [...messages, quizResultMessage];
       setMessages(allMessages);
 
-      // Get access token
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) throw new Error("No access token");
 
-      // Send answers to model for grading
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          Authorization:  `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
-          mode: "quiz",
-          grading: true,
-          ...(difficulty ? { difficulty } : {}),
-          ...(subject ? { subject } : {}),
-          ...(userClass ? { class: userClass } : {}),
+          mode:     "quiz",
+          grading:  true,
+          ...(difficulty ? { difficulty }          : {}),
+          ...(subject    ? { subject }             : {}),
+          ...(userClass  ? { class: userClass }    : {}),
         }),
       });
 
@@ -706,34 +661,42 @@ function ChatContent() {
 
       if (!resp.body) throw new Error("Response has no body");
 
-      // Read grading response
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let gradingContent = "";
+      // ── Read grading stream ─────────────────────────────────────────
+      // FIX: accumulate across chunks, same pattern as handleChatRequest
+      const reader        = resp.body.getReader();
+      const decoder       = new TextDecoder();
+      let textBuffer      = "";
+      let gradingContent  = "";
 
+      readLoop:
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        let textBuffer = decoder.decode(value, { stream: true });
-        const lines = textBuffer.split("\n");
+        textBuffer += decoder.decode(value, { stream: true });
 
-        for (const line of lines) {
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
           if (!line.startsWith("data: ")) continue;
+
           const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
+          if (jsonStr === "[DONE]") break readLoop;
 
           try {
             const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices?.[0]?.delta?.content;
+            const delta  = parsed.choices?.[0]?.delta?.content;
             if (delta) gradingContent += delta;
           } catch {
-            // Skip parse errors
+            textBuffer = line + "\n" + textBuffer;
+            break;
           }
         }
       }
 
-      // Parse grading response into structured results
       setQuizSession((prev) => {
         if (!prev) return prev;
         const results = parseGradingResponse(
@@ -741,32 +704,25 @@ function ChatContent() {
           prev.questionSet,
           prev.studentAnswers
         );
-        return {
-          ...prev,
-          isSubmitted: true,
-          results,
-        };
+        return { ...prev, isSubmitted: true, results };
       });
 
-      // Persist conversation
       if (activeConversationId) {
-        console.log("[Quiz] Persisting quiz submission to database");
         await supabase.from("messages").insert({
           conversation_id: activeConversationId,
-          role: "user",
+          role:    "user",
           content: quizResultMessage.content,
         });
-        console.log("[Quiz] ✓ Quiz submission persisted");
         await supabase.from("messages").insert({
           conversation_id: activeConversationId,
-          role: "assistant",
+          role:    "assistant",
           content: gradingContent,
         });
       }
     } catch (err: any) {
       console.error("Quiz submission error:", err);
       setApiError({
-        type: "server",
+        type:    "server",
         message: "Error submitting quiz. Please try again.",
       });
     } finally {
@@ -775,6 +731,7 @@ function ChatContent() {
     }
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen bg-background">
       <ChatSidebar
@@ -787,6 +744,7 @@ function ChatContent() {
       />
 
       <div className="flex flex-1 flex-col min-w-0">
+
         {/* Header */}
         <header className="flex items-center gap-3 border-b px-4 py-3">
           <button
@@ -814,13 +772,16 @@ function ChatContent() {
             }`}
           >
             <span>{apiError.message}</span>
-            <button onClick={() => setApiError(null)} className="p-1 hover:bg-background/50 rounded">
+            <button
+              onClick={() => setApiError(null)}
+              className="p-1 hover:bg-background/50 rounded"
+            >
               <X size={14} />
             </button>
           </div>
         )}
 
-        {/* Messages area */}
+        {/* Main content area */}
         {quizLoading ? (
           <QuizLoadingOverlay />
         ) : quizSession ? (
@@ -849,7 +810,7 @@ function ChatContent() {
           />
         )}
 
-        {/* Controls bar: mode selector + difficulty */}
+        {/* Controls bar */}
         {!quizSession && (
           <div className="flex flex-wrap items-center gap-3 border-t px-4 py-2 bg-background">
             <ModeSelector mode={mode} onModeChange={setMode} tier={userTier} />
@@ -862,7 +823,10 @@ function ChatContent() {
           </div>
         )}
 
-        {!quizSession && <ChatInput onSend={handleSend} disabled={isLoading} />}
+        {!quizSession && (
+          <ChatInput onSend={handleSend} disabled={isLoading} />
+        )}
+
       </div>
     </div>
   );
