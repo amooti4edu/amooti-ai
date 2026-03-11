@@ -392,19 +392,27 @@ export default function Chat() {
     const json = await resp.json();
     stopLoadingPhrases();
 
+    // json.content is the parsed document object (scheme_of_work, lesson_plan, etc.)
+    // We store it as-is for the rich in-app renderer.
+    // For the chat history and DB we serialise a human-readable text summary.
+    const docObj     = json.content;                           // structured object
+    const docSummary = typeof docObj === "string"
+      ? docObj
+      : `📄 ${docObj?.title ?? "Teacher document"} (${docObj?.type ?? "document"}) — download the Word file above to view the full document.`;
+
     setTeacherDoc({
-      content:     json.content,
+      content:     docObj,          // raw object — TeacherResponse renders it properly
       downloadUrl: json.download_url,
       expiresAt:   Date.now() + (json.expires_in ?? 3600) * 1000,
     });
 
-    setMessages((prev) => [...prev, { role: "assistant", content: json.content }]);
+    setMessages((prev) => [...prev, { role: "assistant", content: docSummary }]);
 
     if (convId) {
       await supabase.from("messages").insert({
         conversation_id: convId,
         role:    "assistant",
-        content: json.content,
+        content: docSummary,
       });
       refreshConversations();
     }
