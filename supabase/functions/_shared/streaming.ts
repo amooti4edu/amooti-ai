@@ -401,45 +401,74 @@ export function streamFinalAnswer(text: string): Response {
 // ── Pipe stream through sanitizer ────────────────────────────────────────────
 // Used when we get a live stream and want to sanitize before forwarding.
 
+// ── Pipe stream through sanitizer (chunk-by-chunk) ───────────────────────────
+// Previous version buffered the entire response before emitting anything,
+// killing the streaming UX. This version sanitizes incrementally at sentence
+// boundaries so tokens reach the client as they arrive.
+//
+// Strategy:
+//   • Accumulate delta tokens into a sentence buffer.
+//   • When a sentence boundary (. ! ? \n) is detected, sanitize and flush.
+//   • Flush any remaining buffer at stream end.
+
 export function sanitizeStream(response: Response): Response {
   const reader  = response.body!.getReader();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  let   lineBuf = "";
-  let   full    = "";
+  let   lineBuf = "";   // SSE line accumulator (cross-chunk)
+  let   sentBuf = "";   // sentence accumulator (sanitized in batches)
+
+  // Sentence boundary — flush when we see one of these
+  const SENTENCE_END = /[.!?\n]/;
+
+  function emit(controller: ReadableStreamDefaultController, text: string) {
+    const sanitized = sanitizeMarkdown(text);
+    if (!sanitized) return;
+    // Emit word-by-word so the frontend types-in effect works
+    const words = sanitized.match(/\S+\s*/g) ?? [];
+    for (const word of words) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: word } }] })}\n\n`
+        )
+      );
+    }
+  }
 
   const stream = new ReadableStream({
-    async start(controller) {
+    async pull(controller) {
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        const { done, value } = await reader.read();
 
-          lineBuf += decoder.decode(value, { stream: true });
-          const lines = lineBuf.split("\n");
-          lineBuf = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") continue;
-            try {
-              const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-              if (delta) full += delta;
-            } catch { /* skip */ }
-          }
+        if (done) {
+          // Flush any remaining sentence buffer
+          if (sentBuf.trim()) emit(controller, sentBuf);
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
         }
 
-        const words = sanitizeMarkdown(full).match(/\S+\s*/g) ?? [];
-        for (const word of words) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { content: word } }] })}\n\n`
-            )
-          );
+        lineBuf += decoder.decode(value, { stream: true });
+        const lines = lineBuf.split("\n");
+        lineBuf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+            if (!delta) continue;
+
+            sentBuf += delta;
+
+            // Flush when we hit a sentence boundary
+            if (SENTENCE_END.test(delta)) {
+              emit(controller, sentBuf);
+              sentBuf = "";
+            }
+          } catch { /* skip malformed chunks */ }
         }
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
       } catch (err) {
         controller.error(err);
       }
