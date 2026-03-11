@@ -9,7 +9,6 @@ import { Separator } from "@/components/ui/separator";
 
 const Login = () => {
   const { role } = useParams<{ role: string }>();
-  // Support three roles: student, teacher, school
   const userRole = (["student", "teacher", "school"].includes(role || "") 
     ? role 
     : "student") as "student" | "teacher" | "school";
@@ -28,11 +27,11 @@ const Login = () => {
     setLoading(true);
     try {
       if (isSignUp) {
-        await signUp(email, password, userRole, displayName);
+        await signUp(email, password, userRole as "student" | "school" | "teacher", displayName);
         toast({ title: "Account created!", description: "Check your email to confirm your account." });
       } else {
         await signIn(email, password);
-        navigate("/chat", { replace: true });
+        navigate("/chat");
       }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
