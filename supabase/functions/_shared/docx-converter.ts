@@ -464,10 +464,18 @@ export async function jsonToDocx(
   const data     = json as any;
   const docType  = (data.type ?? "generic") as DocType;
   const title    = data.title ?? "Curriculum Document";
+  // Normalise term — avoid "Term Term 3" when the value already contains "Term"
+  const rawTerm = data.term ?? term ?? "";
+  const termLabel = rawTerm
+    ? /^term/i.test(String(rawTerm).trim())
+      ? String(rawTerm).trim()
+      : `Term ${rawTerm}`
+    : "";
+
   const metaLine = [
     data.subject ?? subject,
     data.class   ?? classVal,
-    (data.term   ?? term) ? `Term ${data.term ?? term}` : "",
+    termLabel,
   ].filter(Boolean).join(" | ");
 
   const numbering = buildNumbering(60);
