@@ -155,17 +155,22 @@ function _cacheSet(key: string, result: BuiltContext): void {
 }
 
 // ── Qdrant search ─────────────────────────────────────────────────────────────
+//
+// Soft-filter strategy:
+//   1. Search WITH subject + class filters (most precise).
+//   2. If nothing above SCORE_THRESHOLD, retry with ONLY class filter.
+//      Catches subject name mismatches like "H&P" vs
+//      "History and Political Education".
+//   3. If still nothing, retry with NO filters (pure semantic fallback).
+//
+// A wrong subject string now degrades gracefully instead of returning an empty
+// context and letting the model hallucinate the curriculum.
 
-async function qdrantSearch(
-  dense:     number[],
-  subject?:  string,
-  classVal?: string,
-  limit      = QDRANT_TOP_K,
+async function qdrantSearchRaw(
+  dense: number[],
+  must:  unknown[],
+  limit: number,
 ): Promise<QdrantResult[]> {
-  const must: unknown[] = [];
-  if (subject)  must.push({ key: "subject", match: { value: subject } });
-  if (classVal) must.push({ key: "class",   match: { value: classVal } });
-
   const body: Record<string, unknown> = {
     query:        dense,
     using:        "dense",
@@ -211,6 +216,43 @@ async function qdrantSearch(
 
   console.warn("[Qdrant] all retries exhausted");
   return [];
+}
+
+async function qdrantSearch(
+  dense:     number[],
+  subject?:  string,
+  classVal?: string,
+  limit      = QDRANT_TOP_K,
+): Promise<QdrantResult[]> {
+  const subjectFilter = subject  ? [{ key: "subject", match: { value: subject  } }] : [];
+  const classFilter   = classVal ? [{ key: "class",   match: { value: classVal } }] : [];
+
+  // Pass 1 — fully filtered
+  if (subjectFilter.length || classFilter.length) {
+    const r1 = await qdrantSearchRaw(dense, [...subjectFilter, ...classFilter], limit);
+    const best1 = r1[0];
+    if (best1 && best1.score >= SCORE_THRESHOLD) {
+      console.log(`[Qdrant] Soft-filter pass 1 hit (score: ${best1.score.toFixed(3)})`);
+      return r1;
+    }
+    console.log(`[Qdrant] Pass 1 miss (best: ${best1?.score?.toFixed(3) ?? "—"}) — trying pass 2`);
+  }
+
+  // Pass 2 — class only (subject name may not match database value)
+  if (classFilter.length) {
+    const r2 = await qdrantSearchRaw(dense, classFilter, limit);
+    const best2 = r2[0];
+    if (best2 && best2.score >= SCORE_THRESHOLD) {
+      console.log(`[Qdrant] Soft-filter pass 2 hit (class-only, score: ${best2.score.toFixed(3)})`);
+      return r2;
+    }
+    console.log(`[Qdrant] Pass 2 miss (best: ${best2?.score?.toFixed(3) ?? "—"}) — trying pass 3`);
+  }
+
+  // Pass 3 — no filters, pure semantic match
+  const r3 = await qdrantSearchRaw(dense, [], limit);
+  console.log(`[Qdrant] Soft-filter pass 3 (unfiltered, best: ${r3[0]?.score?.toFixed(3) ?? "—"})`);
+  return r3;
 }
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
