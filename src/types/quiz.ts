@@ -2,7 +2,7 @@
  * Quiz flashcard types for quiz mode
  */
 
-export type QuestionType = "mcq" | "short-answer" | "fill-in" | "calculation";
+export type QuestionType = "mcq" | "short-answer" | "fill-in" | "calculation" | "long-answer";
 
 export interface QuizOption {
   id: string; // "A", "B", "C", "D"
