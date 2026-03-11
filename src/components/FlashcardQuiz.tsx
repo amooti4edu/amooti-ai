@@ -24,6 +24,9 @@ interface FlashcardQuizProps {
   isSubmitting?: boolean;
 }
 
+// Question types that have an explicit renderer below
+const HANDLED_TYPES = ["mcq", "short-answer", "fill-in", "calculation", "long-answer"];
+
 export function FlashcardQuiz({
   session,
   onAnswerChange,
@@ -50,10 +53,14 @@ export function FlashcardQuiz({
     <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
       {/* Close button */}
       <div className="flex justify-end">
-        <button onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground underline">
+        <button
+          onClick={onClose}
+          className="text-sm text-muted-foreground hover:text-foreground underline"
+        >
           ← Back to chat
         </button>
       </div>
+
       {/* Progress bar */}
       <div className="space-y-2">
         <div className="flex justify-between text-sm text-muted-foreground">
@@ -68,14 +75,16 @@ export function FlashcardQuiz({
       {/* Question card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">
-            {currentQuestion.text}
-          </CardTitle>
+          <CardTitle className="text-lg">{currentQuestion.text}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+
           {/* MCQ Options */}
           {currentQuestion.type === "mcq" && currentQuestion.options && (
-            <RadioGroup value={currentAnswer} onValueChange={(val) => onAnswerChange(currentQuestion.id, val)}>
+            <RadioGroup
+              value={currentAnswer}
+              onValueChange={(val) => onAnswerChange(currentQuestion.id, val)}
+            >
               <div className="space-y-3">
                 {currentQuestion.options.map((option) => (
                   <div key={option.id} className="flex items-center space-x-2">
@@ -89,7 +98,7 @@ export function FlashcardQuiz({
             </RadioGroup>
           )}
 
-          {/* Short answer input */}
+          {/* Short answer / fill-in */}
           {(currentQuestion.type === "short-answer" ||
             currentQuestion.type === "fill-in") && (
             <Input
@@ -100,7 +109,7 @@ export function FlashcardQuiz({
             />
           )}
 
-          {/* Calculation input */}
+          {/* Calculation */}
           {currentQuestion.type === "calculation" && (
             <Input
               placeholder="Enter your answer (number)"
@@ -108,6 +117,29 @@ export function FlashcardQuiz({
               value={currentAnswer}
               onChange={(e) => onAnswerChange(currentQuestion.id, e.target.value)}
               className="w-full"
+            />
+          )}
+
+          {/* Long answer — FIX: was missing, caused blank question card */}
+          {currentQuestion.type === "long-answer" && (
+            <textarea
+              placeholder="Write your answer here..."
+              value={currentAnswer}
+              onChange={(e) => onAnswerChange(currentQuestion.id, e.target.value)}
+              rows={6}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y min-h-[120px]"
+            />
+          )}
+
+          {/* Fallback: any unrecognised question type gets a textarea so
+              it never silently renders nothing */}
+          {!HANDLED_TYPES.includes(currentQuestion.type) && (
+            <textarea
+              placeholder="Write your answer here..."
+              value={currentAnswer}
+              onChange={(e) => onAnswerChange(currentQuestion.id, e.target.value)}
+              rows={4}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y min-h-[80px]"
             />
           )}
 
@@ -149,9 +181,9 @@ export function FlashcardQuiz({
         </div>
       </div>
 
-      {/* Answer status indicator */}
+      {/* Answer status dots */}
       <div className="flex gap-2 flex-wrap">
-      {questionSet.map((q, idx) => {
+        {questionSet.map((q, idx) => {
           const hasAnswer = studentAnswers.some((a) => a.questionId === q.id);
           return (
             <button
@@ -161,8 +193,8 @@ export function FlashcardQuiz({
                 idx === currentIndex
                   ? "border-2 border-primary bg-primary/10 text-primary"
                   : hasAnswer
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground"
+                  ? "bg-primary/20 text-primary"
+                  : "bg-muted text-muted-foreground"
               }`}
             >
               {idx + 1}
@@ -188,8 +220,8 @@ function QuizResultsView({
     results.score >= 80
       ? "text-green-600"
       : results.score >= 60
-        ? "text-yellow-600"
-        : "text-red-600";
+      ? "text-yellow-600"
+      : "text-red-600";
 
   return (
     <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
