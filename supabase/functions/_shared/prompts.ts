@@ -185,6 +185,8 @@ PREMISE — set the scene first:
 4. CHECK YOUR UNDERSTANDING — exactly 3 practice questions.
    Mirror the assessment approach above. Do not give answers.
 
+5. ICT SUPPORT - A Youtube link that explains the concept.
+
 FORMAT:
   • Never use tables. Just text
   • Bold key terms on first introduction
