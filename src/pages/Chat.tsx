@@ -31,6 +31,45 @@ import "highlight.js/styles/github.css";
 
 const SUPABASE_URL = "https://ehswpksboxyzqztdhofh.supabase.co";
 
+// ── Subject configuration ─────────────────────────────────────────────────
+// Edit these arrays to add or remove subjects. O-Level shows for S1–S4,
+// A-Level shows for S5–S6, both show if class is not set.
+const OLEVEL_SUBJECTS = [
+  "Mathematics",
+  "English",
+  "Biology",
+  "Chemistry",
+  "Physics",
+  "H&P",
+  "Geography",
+  "General Science",
+] as const;
+
+const ALEVEL_SUBJECTS = [
+  "Mathematics",
+  "Physics",
+  "Chemistry",
+  "Biology",
+  "Economics",
+  "History",
+  "Geography",
+  "General Paper",
+] as const;
+
+const ALEVEL_CLASSES = ["S5", "S6"];
+
+/** Returns the subject list appropriate for the user's class. */
+function getSubjectList(userClass?: string): string[] {
+  if (!userClass) {
+    // No class set — show combined, deduplicated list
+    return Array.from(new Set([...OLEVEL_SUBJECTS, ...ALEVEL_SUBJECTS]));
+  }
+  return ALEVEL_CLASSES.includes(userClass)
+    ? [...ALEVEL_SUBJECTS]
+    : [...OLEVEL_SUBJECTS];
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 const THINKING_PHRASES = [
   "Thinking...",
   "Planning research...",
@@ -71,10 +110,14 @@ export default function Chat() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>(undefined);
   const [userTier, setUserTier]     = useState<Tier>("free");
   const quota                        = useQuotaSync(userTier as Tier, session?.user.id ?? null);
-  const [apiError, setApiError]     = useState<ApiError | null>(null);
-  const [teacherDoc, setTeacherDoc] = useState<TeacherDoc | null>(null);
-  const [subject, setSubject]       = useState<string | undefined>(undefined);
-  const [userClass, setUserClass]   = useState<string | undefined>(undefined);
+  const [apiError, setApiError]         = useState<ApiError | null>(null);
+  const [teacherDoc, setTeacherDoc]     = useState<TeacherDoc | null>(null);
+  const [subject, setSubject]           = useState<string | undefined>(undefined);
+  const [userClass, setUserClass]       = useState<string | undefined>(undefined);
+  // sessionSubject: what the user has selected for this session.
+  // Starts from their profile subject but can be changed per-session
+  // without touching the profile.
+  const [sessionSubject, setSessionSubject] = useState<string | undefined>(undefined);
 
   // ── Quiz state ─────────────────────────────────────────────────────────
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
@@ -117,8 +160,11 @@ export default function Chat() {
         if (data) {
           const d = data as any;
           setUserTier((d.tier as Tier) ?? "free");
-          if (d.subject) setSubject(d.subject);
-          if (d.class)   setUserClass(d.class);
+          if (d.subject) {
+            setSubject(d.subject);
+            setSessionSubject(d.subject);   // seed session selector from profile
+          }
+          if (d.class) setUserClass(d.class);
         }
       });
   }, [session]);
@@ -141,9 +187,12 @@ export default function Chat() {
         },
         (payload) => {
           const updated = payload.new as any;
-          if (updated.tier)    setUserTier(updated.tier as Tier);
-          if (updated.subject) setSubject(updated.subject);
-          if (updated.class)   setUserClass(updated.class);
+          if (updated.tier) setUserTier(updated.tier as Tier);
+          if (updated.subject) {
+            setSubject(updated.subject);
+            setSessionSubject(updated.subject); // keep selector in sync with profile
+          }
+          if (updated.class) setUserClass(updated.class);
           // Also keep the auth context profile fresh
           refreshProfile?.();
         }
@@ -327,8 +376,8 @@ export default function Chat() {
           role:    m.role,
           content: m.content,
         })),
-        ...(subject   ? { subject }       : {}),
-        ...(userClass ? { class: userClass } : {}),
+        ...(sessionSubject ? { subject: sessionSubject } : {}),
+        ...(userClass      ? { class: userClass }        : {}),
       }),
       signal: AbortSignal.timeout(60_000),
     });
@@ -372,7 +421,13 @@ export default function Chat() {
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const messagesForBackend = getMessagesForBackend(allMessages);
+        // FIX: In quiz mode, only send the single triggering user message.
+        // Sending prior conversation history confuses the backend into
+        // returning raw JSON instead of a properly formatted quiz.
+        const isQuizRequest = mode === "quiz";
+        const messagesForBackend = isQuizRequest
+          ? [allMessages[allMessages.length - 1]]   // just the user's quiz prompt
+          : getMessagesForBackend(allMessages);
 
         const resp = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
           method: "POST",
@@ -383,9 +438,9 @@ export default function Chat() {
           body: JSON.stringify({
             messages: messagesForBackend.map((m) => ({ role: m.role, content: m.content })),
             mode,
-            ...(difficulty && mode === "quiz" ? { difficulty }       : {}),
-            ...(subject                       ? { subject }          : {}),
-            ...(userClass                     ? { class: userClass } : {}),
+            ...(difficulty && mode === "quiz" ? { difficulty }              : {}),
+            ...(sessionSubject                ? { subject: sessionSubject } : {}),
+            ...(userClass                     ? { class: userClass }        : {}),
           }),
         });
 
@@ -646,9 +701,9 @@ export default function Chat() {
           messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
           mode:     "quiz",
           grading:  true,
-          ...(difficulty ? { difficulty }          : {}),
-          ...(subject    ? { subject }             : {}),
-          ...(userClass  ? { class: userClass }    : {}),
+          ...(difficulty    ? { difficulty }              : {}),
+          ...(sessionSubject ? { subject: sessionSubject } : {}),
+          ...(userClass     ? { class: userClass }        : {}),
         }),
       });
 
@@ -814,6 +869,19 @@ export default function Chat() {
         {!quizSession && (
           <div className="flex flex-wrap items-center gap-3 border-t px-4 py-2 bg-background">
             <ModeSelector mode={mode} onModeChange={setMode} tier={userTier} />
+
+            {/* Subject selector — always visible across all modes */}
+            <select
+              value={sessionSubject ?? ""}
+              onChange={(e) => setSessionSubject(e.target.value || undefined)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">Subject…</option>
+              {getSubjectList(userClass).map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+
             {mode === "quiz" && (
               <DifficultySelector
                 difficulty={difficulty}
