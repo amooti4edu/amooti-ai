@@ -172,7 +172,7 @@ export function FlashcardQuiz({
           ) : (
             <Button
               onClick={onSubmit}
-              disabled={isSubmitting || studentAnswers.length < totalQuestions}
+              disabled={isSubmitting}
               className="bg-green-600 hover:bg-green-700"
             >
               {isSubmitting ? "Submitting..." : "Submit Quiz"}
