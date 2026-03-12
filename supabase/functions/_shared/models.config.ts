@@ -72,7 +72,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
       {
         label:         "Llama 3.1 70B (OpenRouter free)",
         providerUrl:   OPENROUTER_URL,
-        model:         "meta-llama/llama-3.1-70b-instruct:free",
+        model:         "meta-llama/llama-3.3-70b-instruct:free",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: false,
       },
@@ -151,9 +151,9 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
         supportsTools: true,
       },
       {
-        label:         "Gemini 3 Flash",
+        label:         "Gemini 2.5 Flash",
         providerUrl:   OPENROUTER_URL,
-        model:         "google/gemini-3-flash-preview",
+        model:         "google/gemini-2.5-flash",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
       },
@@ -165,9 +165,9 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
         supportsTools: true,
       },
       {
-        label:         "Gemini 2.5 Flash",
+        label:         "Gemini 3 Flash",
         providerUrl:   OPENROUTER_URL,
-        model:         "google/gemini-2.5-flash",
+        model:         "google/gemini-3-flash-preview",
         apiKeyEnv:     "OPENROUTER_API_KEY",
         supportsTools: true,
       },
