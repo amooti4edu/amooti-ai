@@ -369,11 +369,14 @@ export type Database = {
           created_at: string | null
           display_name: string | null
           id: string
-          onboarding_completed: boolean
+          payment_reference: string | null
+          phone_number: string | null
           role: string
           subject: string | null
           term: string | null
           tier: string
+          tier_expires_at: string | null
+          tier_updated_at: string | null
           updated_at: string | null
         }
         Insert: {
@@ -381,11 +384,14 @@ export type Database = {
           created_at?: string | null
           display_name?: string | null
           id: string
-          onboarding_completed?: boolean
+          payment_reference?: string | null
+          phone_number?: string | null
           role?: string
           subject?: string | null
           term?: string | null
           tier?: string
+          tier_expires_at?: string | null
+          tier_updated_at?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -393,11 +399,14 @@ export type Database = {
           created_at?: string | null
           display_name?: string | null
           id?: string
-          onboarding_completed?: boolean
+          payment_reference?: string | null
+          phone_number?: string | null
           role?: string
           subject?: string | null
           term?: string | null
           tier?: string
+          tier_expires_at?: string | null
+          tier_updated_at?: string | null
           updated_at?: string | null
         }
         Relationships: []
