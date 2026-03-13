@@ -636,7 +636,7 @@ export default function Chat() {
               const updated = [...prev];
               updated[updated.length - 1] = {
                 role: "assistant",
-                content: "I wasn't able to format that as a quiz. Try being more specific — for example: **"Quiz me on quadratic equations"** or **"Quiz me on S3 term 1 Biology"**.",
+                content: 'I wasn\'t able to format that as a quiz. Try being more specific — for example: **"Quiz me on quadratic equations"** or **"Quiz me on S3 term 1 Biology"**.',
               };
               return updated;
             });
