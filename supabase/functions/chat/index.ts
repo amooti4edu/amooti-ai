@@ -55,8 +55,21 @@ async function checkUserRateLimit(
   sb:     any,
   tier:   Tier,
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const now        = new Date();
-  const dailyLimit = TIER_CONFIG[tier].dailyLimit;
+  const now = new Date();
+
+  // Check for a per-user custom limit (set directly in profiles for enterprise schools).
+  // Falls back to the tier default if not set.
+  let dailyLimit = TIER_CONFIG[tier]?.dailyLimit ?? TIER_CONFIG["free"].dailyLimit;
+  try {
+    const { data: profile } = await sb
+      .from("profiles")
+      .select("custom_daily_limit")
+      .eq("id", userId)
+      .single();
+    if (profile?.custom_daily_limit != null) {
+      dailyLimit = profile.custom_daily_limit;
+    }
+  } catch { /* non-fatal — use tier default */ }
 
   try {
     const { data } = await sb

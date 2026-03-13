@@ -6,7 +6,7 @@
 // ============================================================================
 
 export type Mode = "query" | "quiz" | "teacher";
-export type Tier = "free" | "basic" | "premium";
+export type Tier = "free" | "basic" | "premium" | "enterprise";
 
 export interface ModelEntry {
   /** Human-readable label for logs */
@@ -185,6 +185,41 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
         apiKeyEnv:               "OLLAMA_API_KEY",
         supportsTools:           true,
         requiresNDJSONTransform: true,
+      },
+    ],
+  },
+// ── ENTERPRISE — 100 questions/day (custom negotiated pricing) ───────────────
+  enterprise: {
+    dailyLimit:   100,
+    allowedModes: ["query", "quiz", "teacher"],
+    models: [
+      {
+        label:         "GPT 5 Nano",
+        providerUrl:   OPENROUTER_URL,
+        model:         "openai/gpt-5-nano",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
+        supportsTools: true,
+      },
+      {
+        label:         "Gemini 2.5 Flashlite",
+        providerUrl:   OPENROUTER_URL,
+        model:         "google/gemini-2.5-flash-lite",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
+        supportsTools: true,
+      },
+      {
+        label:         "GPT 4o mini (OpenRouter)",
+        providerUrl:   OPENROUTER_URL,
+        model:         "openai/gpt-4o-mini",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
+        supportsTools: true,
+      },
+      {
+        label:         "Grok 4.1 fast",
+        providerUrl:   OPENROUTER_URL,
+        model:         "x-ai/grok-4.1-fast",
+        apiKeyEnv:     "OPENROUTER_API_KEY",
+        supportsTools: true,
       },
     ],
   },

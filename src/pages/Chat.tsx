@@ -72,24 +72,32 @@ function getSubjectList(userClass?: string): string[] {
 
 const THINKING_PHRASES = [
   "Thinking...",
-  "Planning research...",
-  "Checking the syllabus...",
+  "Searching the syllabus...",
+  "Finding the right concepts...",
+  "Connecting the curriculum...",
+  "Checking your progress...",
+  "Planning the best answer...",
   "Validating findings...",
   "Putting it all together...",
   "Almost there...",
-  "Almost there...",
+  "Just a moment more...",
+  "Still working on it...",
+  "Switching models, hang tight...",
   "Almost there...",
 ];
 
 const TEACHER_PHRASES = [
   "Thinking...",
-  "Planning research...",
-  "Checking the syllabus...",
-  "Validating findings...",
+  "Reading the curriculum...",
+  "Checking learning outcomes...",
+  "Planning the structure...",
   "Generating your document…",
   "Building lesson content…",
+  "Adding activities and methods…",
   "Formatting materials…",
+  "Switching models, hang tight...",
   "Almost ready…",
+  "Final touches…",
 ];
 
 // ── Single default export — no onboarding wrapper ─────────────────────────
@@ -235,7 +243,7 @@ export default function Chat() {
     phraseTimerRef.current = setInterval(() => {
       idx = (idx + 1) % phrases.length;
       setLoadingPhrase(phrases[idx]);
-    }, 1800);
+    }, 3000);
   };
 
   const stopLoadingPhrases = () => {
@@ -290,7 +298,10 @@ export default function Chat() {
 
     const userMessage: Message   = { role: "user", content };
     const allMessages: Message[] = [...messages, userMessage];
-    setMessages(allMessages);
+
+    // Show user message + empty assistant bubble immediately so the dot-pulse
+    // animation starts right away — even during long model failover waits.
+    setMessages([...allMessages, { role: "assistant", content: "" }]);
     setIsLoading(true);
     startLoadingPhrases(mode === "teacher" ? TEACHER_PHRASES : THINKING_PHRASES);
 
@@ -365,22 +376,44 @@ export default function Chat() {
       return;
     }
 
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/teacher`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization:  `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        messages: getMessagesForBackend(allMessages).map((m) => ({
-          role:    m.role,
-          content: m.content,
-        })),
-        ...(sessionSubject ? { subject: sessionSubject } : {}),
-        ...(userClass      ? { class: userClass }        : {}),
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
+    // Teacher endpoint can take 2+ minutes — extend timeout and add keep-alive.
+    let resp: Response;
+    try {
+      resp = await fetch(`${SUPABASE_URL}/functions/v1/teacher`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:  `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messages: getMessagesForBackend(allMessages).map((m) => ({
+            role:    m.role,
+            content: m.content,
+          })),
+          ...(sessionSubject ? { subject: sessionSubject } : {}),
+          ...(userClass      ? { class: userClass }        : {}),
+        }),
+        signal: AbortSignal.timeout(150_000), // 2.5 min — teacher docs take time
+      });
+    } catch (fetchErr: any) {
+      // Timeout or network drop — try polling DB in case backend finished
+      if (convId) {
+        setLoadingPhrase("Still building your document, hang tight…");
+        const polled = await pollForReply(convId, 8000, 10);
+        if (polled) {
+          stopLoadingPhrases();
+          // We have the summary but not the download URL — show what we have
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "assistant", content: polled };
+            return updated;
+          });
+          refreshConversations();
+          return;
+        }
+      }
+      throw fetchErr;
+    }
 
     if (!resp.ok) {
       const error = await parseApiError(resp);
@@ -392,21 +425,23 @@ export default function Chat() {
     const json = await resp.json();
     stopLoadingPhrases();
 
-    // json.content is the parsed document object (scheme_of_work, lesson_plan, etc.)
-    // We store it as-is for the rich in-app renderer.
-    // For the chat history and DB we serialise a human-readable text summary.
-    const docObj     = json.content;                           // structured object
+    const docObj     = json.content;
     const docSummary = typeof docObj === "string"
       ? docObj
       : `📄 ${docObj?.title ?? "Teacher document"} (${docObj?.type ?? "document"}) — download the Word file above to view the full document.`;
 
     setTeacherDoc({
-      content:     docObj,          // raw object — TeacherResponse renders it properly
+      content:     docObj,
       downloadUrl: json.download_url,
       expiresAt:   Date.now() + (json.expires_in ?? 3600) * 1000,
     });
 
-    setMessages((prev) => [...prev, { role: "assistant", content: docSummary }]);
+    // Fill in the empty bubble we added in handleSend
+    setMessages((prev) => {
+      const updated = [...prev];
+      updated[updated.length - 1] = { role: "assistant", content: docSummary };
+      return updated;
+    });
 
     if (convId) {
       await supabase.from("messages").insert({
@@ -418,7 +453,31 @@ export default function Chat() {
     }
   };
 
-  // ── Chat mode handler (SSE streaming with retry) ───────────────────────
+  // ── Poll DB for assistant reply (keep-alive fallback) ─────────────────
+  // Called when SSE stream ends with no content or times out. The backend
+  // may have finished writing to the DB even if the stream disconnected.
+  const pollForReply = async (convId: string, pollMs = 5000, maxAttempts = 12) => {
+    console.log("[Poll] SSE empty — polling DB for reply...");
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, pollMs));
+      const { data } = await supabase
+        .from("messages")
+        .select("content, role, created_at")
+        .eq("conversation_id", convId)
+        .eq("role", "assistant")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (data?.content) {
+        console.log(`[Poll] Found reply on attempt ${i + 1}`);
+        return data.content as string;
+      }
+    }
+    console.warn("[Poll] No reply found after polling");
+    return null;
+  };
+
+  // ── Chat mode handler (SSE streaming with retry + keep-alive) ──────────
   const handleChatRequest = async (
     allMessages: Message[],
     accessToken: string,
@@ -429,12 +488,12 @@ export default function Chat() {
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        // FIX: In quiz mode, only send the single triggering user message.
+        // In quiz mode only send the single triggering user message.
         // Sending prior conversation history confuses the backend into
         // returning raw JSON instead of a properly formatted quiz.
         const isQuizRequest = mode === "quiz";
         const messagesForBackend = isQuizRequest
-          ? [allMessages[allMessages.length - 1]]   // just the user's quiz prompt
+          ? [allMessages[allMessages.length - 1]]
           : getMessagesForBackend(allMessages);
 
         const resp = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
@@ -462,27 +521,15 @@ export default function Chat() {
         if (!resp.body) throw new Error("Response has no body");
 
         // ── Read SSE stream ───────────────────────────────────────────
-        const reader   = resp.body.getReader();
-        const decoder  = new TextDecoder();
-
-        // FIX: textBuffer lives OUTSIDE the read loop so partial lines
-        // accumulate correctly across chunks.
-        let textBuffer           = "";
-        let assistantContent     = "";
-        let assistantBubbleAdded = false;
-        const isQuizMode         = mode === "quiz";
+        const reader     = resp.body.getReader();
+        const decoder    = new TextDecoder();
+        let textBuffer   = "";
+        let assistantContent = "";
+        const isQuizMode = mode === "quiz";
 
         if (isQuizMode) {
           setQuizLoading(true);
           stopLoadingPhrases();
-        }
-
-        // FIX: on retry, remove any ghost assistant bubble from prior attempt
-        if (attempt > 1) {
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            return last?.role === "assistant" ? prev.slice(0, -1) : prev;
-          });
         }
 
         readLoop:
@@ -511,11 +558,9 @@ export default function Chat() {
                 assistantContent += delta;
 
                 if (!isQuizMode) {
-                  if (!assistantBubbleAdded) {
-                    assistantBubbleAdded = true;
-                    stopLoadingPhrases();
-                    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-                  }
+                  // Stop the loading phrases on first token, then stream into
+                  // the bubble we already added in handleSend.
+                  stopLoadingPhrases();
                   setMessages((prev) => {
                     const updated = [...prev];
                     updated[updated.length - 1] = {
@@ -527,20 +572,43 @@ export default function Chat() {
                 }
               }
             } catch {
-              // Incomplete JSON chunk — put the line back and wait for more data
+              // Incomplete JSON chunk — accumulate and retry
               textBuffer = line + "\n" + textBuffer;
               break;
             }
           }
         }
 
-        // ── Empty response guard ──────────────────────────────────────
+        // ── Keep-alive: if stream ended with no content, poll the DB ─────
+        // This catches cases where the backend finished but the SSE stream
+        // disconnected before delivering tokens to the client.
+        if (!assistantContent && convId) {
+          setLoadingPhrase("Still waiting for a response…");
+          const polled = await pollForReply(convId);
+          if (polled) {
+            assistantContent = polled;
+            if (!isQuizMode) {
+              stopLoadingPhrases();
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: "assistant", content: polled };
+                return updated;
+              });
+            }
+          }
+        }
+
+        // ── Still nothing after polling ───────────────────────────────
         if (!assistantContent) {
           setQuizLoading(false);
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: "I didn't receive a response. Please try again." },
-          ]);
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: "assistant",
+              content: "I didn't receive a response. Please try again.",
+            };
+            return updated;
+          });
           return;
         }
 
@@ -549,10 +617,12 @@ export default function Chat() {
           const quizData = parseQuizResponse(assistantContent);
           setQuizLoading(false);
           if (quizData && quizData.questions.length > 0) {
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant", content: assistantContent },
-            ]);
+            // Replace the empty bubble with the raw quiz content
+            setMessages((prev) => {
+              const updated = [...prev];
+              updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+              return updated;
+            });
             setQuizSession({
               questionSet:    quizData.questions,
               currentIndex:   0,
@@ -560,21 +630,39 @@ export default function Chat() {
               isSubmitted:    false,
             });
           } else {
-            console.warn("[Quiz] Failed to parse quiz — showing raw response");
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant", content: assistantContent },
-            ]);
+            // Parse failed — show friendly retry prompt instead of raw JSON
+            console.warn("[Quiz] Failed to parse quiz response");
+            setMessages((prev) => {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                role: "assistant",
+                content: "I wasn't able to format that as a quiz. Try being more specific — for example: **"Quiz me on quadratic equations"** or **"Quiz me on S3 term 1 Biology"**.",
+              };
+              return updated;
+            });
           }
         }
 
-        // ── Persist assistant message ─────────────────────────────────
+        // ── Persist assistant message to DB (skip if already polled — it's there) ─
         if (convId) {
-          await supabase.from("messages").insert({
-            conversation_id: convId,
-            role:    "assistant",
-            content: assistantContent,
-          });
+          // Only insert if we got this from the stream (not from polling)
+          const { data: existing } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("conversation_id", convId)
+            .eq("role", "assistant")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          const alreadyInDb = existing != null;
+          if (!alreadyInDb) {
+            await supabase.from("messages").insert({
+              conversation_id: convId,
+              role:    "assistant",
+              content: assistantContent,
+            });
+          }
           refreshConversations();
         }
 
@@ -586,7 +674,6 @@ export default function Chat() {
         console.warn(`[SSE] Attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
 
         if (attempt < MAX_RETRIES) {
-          // Exponential backoff: 1s → 2s → 4s
           await new Promise((resolve) =>
             setTimeout(resolve, Math.pow(2, attempt - 1) * 1000)
           );
@@ -597,13 +684,14 @@ export default function Chat() {
     // All retries exhausted
     setQuizLoading(false);
     console.error("[SSE] All retries failed:", lastError);
-    setMessages((prev) => [
-      ...prev,
-      {
+    setMessages((prev) => {
+      const updated = [...prev];
+      updated[updated.length - 1] = {
         role:    "assistant",
         content: `Sorry, I couldn't get a response after ${MAX_RETRIES} attempts. Please try again in a moment.`,
-      },
-    ]);
+      };
+      return updated;
+    });
   };
 
   // ── Refresh conversation list (safe — uses closure over session) ───────
@@ -900,7 +988,7 @@ export default function Chat() {
         )}
 
         {!quizSession && (
-          <ChatInput onSend={handleSend} disabled={isLoading} />
+          <ChatInput onSend={handleSend} disabled={isLoading} mode={mode} />
         )}
 
       </div>

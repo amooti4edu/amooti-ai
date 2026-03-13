@@ -27,7 +27,7 @@ export function ModeSelector({ mode, onModeChange, tier }: ModeSelectorProps) {
         {modes.map((m) => {
           const Icon = m.icon;
           const isActive = mode === m.value;
-          const isDisabled = m.premiumOnly && tier !== "premium";
+          const isDisabled = m.premiumOnly && tier !== "premium" && tier !== "enterprise";
 
           const button = (
             <button

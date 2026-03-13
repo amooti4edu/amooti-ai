@@ -1,12 +1,20 @@
 import { useState, KeyboardEvent, useRef, useEffect } from "react";
 import { Send } from "lucide-react";
+import type { ChatMode } from "@/types/chat";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled: boolean;
+  mode: ChatMode;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+const PLACEHOLDERS: Record<ChatMode, string> = {
+  query:   "Explain photosynthesis…",
+  quiz:    "Quiz me on quadratic equations…",
+  teacher: "Create a lesson plan for Trigonometry S2 Term 1…",
+};
+
+export function ChatInput({ onSend, disabled, mode }: ChatInputProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -42,7 +50,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask a question…"
+          placeholder={PLACEHOLDERS[mode]}
           disabled={disabled}
           rows={1}
           className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 max-h-[140px] overflow-y-auto"

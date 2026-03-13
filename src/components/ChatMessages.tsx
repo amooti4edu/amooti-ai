@@ -214,8 +214,8 @@ export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: 
         )
       )}
 
-      {/* Loading indicator — shown while waiting for the first token */}
-      {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user") && (
+      {/* Loading indicator — shown while the assistant bubble is still empty */}
+      {isLoading && (messages.length === 0 || messages[messages.length - 1]?.content === "") && (
         <div className="w-full px-4 md:px-8 py-5 animate-fade-in">
           <div className="mb-4 flex items-center gap-2.5">
             <div className="flex-shrink-0 rounded-full bg-accent/15 p-1.5">
