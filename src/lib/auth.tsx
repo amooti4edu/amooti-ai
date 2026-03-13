@@ -45,23 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // onAuthStateChange fires for INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, etc.
-    // It also handles hash-based tokens from OAuth redirects (e.g. Google),
-    // so we do NOT need a separate getSession() call — that caused a race condition
-    // where loading was set to false before the hash token was processed, making
-    // Chat.tsx redirect OAuth users back to "/" before their session was ready.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          // setTimeout(0) defers the Supabase query so it does not block the
-          // auth state update itself (avoids potential deadlock in Supabase JS client).
           setTimeout(() => fetchProfile(session.user.id), 0);
         } else {
           setProfile(null);
         }
-        // Only mark loading as done AFTER auth state is known.
         setLoading(false);
       }
     );
@@ -95,12 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        // Redirect to "/" (landing page), not "/chat".
-        // Index.tsx already redirects authenticated users to /chat automatically.
-        // Pointing directly to /chat was broken for new OAuth users: Chat.tsx would
-        // see loading=false + session=null and navigate back to "/" before
-        // onAuthStateChange had a chance to process the hash token.
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: `${window.location.origin}/chat`,
       },
     });
     if (error) throw error;

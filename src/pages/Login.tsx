@@ -9,9 +9,9 @@ import { Separator } from "@/components/ui/separator";
 
 const Login = () => {
   const { role } = useParams<{ role: string }>();
-  const userRole = (["student", "teacher", "school"].includes(role || "") 
+  const userRole = (["student", "school"].includes(role || "") 
     ? role 
-    : "student") as "student" | "teacher" | "school";
+    : "student") as "student" | "school";
   const navigate = useNavigate();
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const { toast } = useToast();
@@ -27,7 +27,7 @@ const Login = () => {
     setLoading(true);
     try {
       if (isSignUp) {
-        await signUp(email, password, userRole as "student" | "school" | "teacher", displayName);
+        await signUp(email, password, userRole, displayName);
         toast({ title: "Account created!", description: "Check your email to confirm your account." });
       } else {
         await signIn(email, password);
