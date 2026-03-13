@@ -403,9 +403,11 @@ export async function buildQueryContext(
   }
 
   // ── Sequential: full topic context + prerequisites + cross-subject ─────────
-  const topicContext = await sb.rpc("get_topic_context", { p_topic_id: best.payload.topic_id })
-    .then((r: any) => r.data ?? null)
-    .catch(() => null);
+  let topicContext: any = null;
+  try {
+    const r = await sb.rpc("get_topic_context", { p_topic_id: best.payload.topic_id });
+    topicContext = r.data ?? null;
+  } catch { /* ignore */ }
 
   const rawConcepts = (topicContext?.concepts as ConceptNode[]) ?? [];
   const anchor = rawConcepts.length > 0 ? rawConcepts[0] : null;
