@@ -45,6 +45,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // First, grab whatever session already exists (e.g. after Google OAuth redirect).
+    // This prevents the race condition where onAuthStateChange fires *after* the
+    // Chat page's auth guard has already run and redirected to "/".
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      }
+      setLoading(false);
+    });
+
+    // Then keep listening for future auth changes (sign-out, token refresh, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
