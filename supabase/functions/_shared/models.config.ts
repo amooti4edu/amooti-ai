@@ -131,6 +131,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     dailyLimit:   20,
     allowedModes: ["query", "quiz", "teacher"],
     models: [
+      { label: "OpenRouter auto (Testing)",      providerUrl: PRIMARY_URL,    model: "openrouter/auto",                    apiKeyEnv: PRIMARY_KEY,          supportsTools: false },
       // ── Model 1: Grok 4 Fast ────────────────────────────────────────────────
       { label: "Grok 4 Fast (Cloudflare→OpenRouter)",     providerUrl: PRIMARY_URL,    model: "x-ai/grok-4-fast",              apiKeyEnv: PRIMARY_KEY,          supportsTools: true  },
       { label: "Grok 4 Fast (OpenRouter direct)",          providerUrl: OPENROUTER_URL, model: "x-ai/grok-4-fast",              apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true  },
