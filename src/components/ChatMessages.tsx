@@ -159,14 +159,7 @@ export function ChatMessages({ messages, isLoading, loadingPhrase, bottomRef }: 
               </span>
             </div>
 
-            {msg.content === "" ? (
-              // Cursor pulse while first tokens arrive
-              <div className="flex items-center gap-1 pl-0.5">
-                <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" />
-                <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.2s" }} />
-                <span className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-pulse-dot" style={{ animationDelay: "0.4s" }} />
-              </div>
-            ) : isQuizJson(msg.content) ? (
+            {isQuizJson(msg.content) ? (
               // Quiz JSON stored in history — render a clean pill instead of raw code
               <div className="inline-flex items-center gap-2 rounded-full bg-accent/15 px-3 py-1.5 text-sm text-muted-foreground">
                 <span>🎯</span>
