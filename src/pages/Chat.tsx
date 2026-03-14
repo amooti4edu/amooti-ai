@@ -299,9 +299,10 @@ export default function Chat() {
     const userMessage: Message   = { role: "user", content };
     const allMessages: Message[] = [...messages, userMessage];
 
-    // Show user message + empty assistant bubble immediately so the dot-pulse
-    // animation starts right away — even during long model failover waits.
-    setMessages([...allMessages, { role: "assistant", content: "" }]);
+    // Show user message immediately; the loading indicator in ChatMessages
+    // handles the "waiting" state. The assistant bubble is only added once
+    // real content arrives, preventing the stuck-empty-bubble bug.
+    setMessages(allMessages);
     setIsLoading(true);
     startLoadingPhrases(mode === "teacher" ? TEACHER_PHRASES : THINKING_PHRASES);
 
@@ -404,9 +405,10 @@ export default function Chat() {
           stopLoadingPhrases();
           // We have the summary but not the download URL — show what we have
           setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1] = { role: "assistant", content: polled };
-            return updated;
+            const last = prev[prev.length - 1];
+            return last?.role === "assistant"
+              ? [...prev.slice(0, -1), { role: "assistant", content: polled }]
+              : [...prev, { role: "assistant", content: polled }];
           });
           refreshConversations();
           return;
@@ -436,11 +438,12 @@ export default function Chat() {
       expiresAt:   Date.now() + (json.expires_in ?? 3600) * 1000,
     });
 
-    // Fill in the empty bubble we added in handleSend
+    // Append the assistant response (or replace if somehow one snuck in)
     setMessages((prev) => {
-      const updated = [...prev];
-      updated[updated.length - 1] = { role: "assistant", content: docSummary };
-      return updated;
+      const last = prev[prev.length - 1];
+      return last?.role === "assistant"
+        ? [...prev.slice(0, -1), { role: "assistant", content: docSummary }]
+        : [...prev, { role: "assistant", content: docSummary }];
     });
 
     if (convId) {
@@ -555,13 +558,19 @@ export default function Chat() {
               const parsed = JSON.parse(jsonStr);
               const delta  = parsed.choices?.[0]?.delta?.content;
               if (delta) {
+                const isFirstToken = assistantContent === "";
                 assistantContent += delta;
 
                 if (!isQuizMode) {
-                  // Stop the loading phrases on first token, then stream into
-                  // the bubble we already added in handleSend.
+                  // On the first token, stop the loading phrases and append
+                  // the assistant message. On subsequent tokens, update it.
                   stopLoadingPhrases();
                   setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    const alreadyHasBubble = last?.role === "assistant";
+                    if (isFirstToken && !alreadyHasBubble) {
+                      return [...prev, { role: "assistant", content: assistantContent }];
+                    }
                     const updated = [...prev];
                     updated[updated.length - 1] = {
                       role:    "assistant",
@@ -590,9 +599,13 @@ export default function Chat() {
             if (!isQuizMode) {
               stopLoadingPhrases();
               setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: polled };
-                return updated;
+                const last = prev[prev.length - 1];
+                if (last?.role === "assistant") {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content: polled };
+                  return updated;
+                }
+                return [...prev, { role: "assistant", content: polled }];
               });
             }
           }
@@ -602,12 +615,14 @@ export default function Chat() {
         if (!assistantContent) {
           setQuizLoading(false);
           setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
+            const noReply: Message = {
               role: "assistant",
               content: "I didn't receive a response. Please try again.",
             };
-            return updated;
+            const last = prev[prev.length - 1];
+            return last?.role === "assistant"
+              ? [...prev.slice(0, -1), noReply]
+              : [...prev, noReply];
           });
           return;
         }
@@ -633,12 +648,14 @@ export default function Chat() {
             // Parse failed — show friendly retry prompt instead of raw JSON
             console.warn("[Quiz] Failed to parse quiz response");
             setMessages((prev) => {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
+              const failMsg: Message = {
                 role: "assistant",
                 content: "I wasn't able to format that as a quiz. Try being more specific — for example: **Quiz me on quadratic equations** or **Quiz me on S3 term 1 Biology**.",
               };
-              return updated;
+              const last = prev[prev.length - 1];
+              return last?.role === "assistant"
+                ? [...prev.slice(0, -1), failMsg]
+                : [...prev, failMsg];
             });
           }
         }
@@ -685,12 +702,14 @@ export default function Chat() {
     setQuizLoading(false);
     console.error("[SSE] All retries failed:", lastError);
     setMessages((prev) => {
-      const updated = [...prev];
-      updated[updated.length - 1] = {
+      const errMsg: Message = {
         role:    "assistant",
         content: `Sorry, I couldn't get a response after ${MAX_RETRIES} attempts. Please try again in a moment.`,
       };
-      return updated;
+      const last = prev[prev.length - 1];
+      return last?.role === "assistant"
+        ? [...prev.slice(0, -1), errMsg]
+        : [...prev, errMsg];
     });
   };
 
