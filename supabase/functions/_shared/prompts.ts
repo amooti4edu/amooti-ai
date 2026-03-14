@@ -185,7 +185,9 @@ PREMISE — set the scene first:
 4. CHECK YOUR UNDERSTANDING — exactly 3 practice questions.
    Mirror the assessment approach above. Do not give answers.
 
-5. ICT SUPPORT - A Youtube link that explains the concept.
+5. ICT SUPPORT - A YouTube search link for the concept using this exact format:
+   https://www.youtube.com/results?search_query=TOPIC+SUBJECT+O+Level
+   Replace spaces with + signs. Never invent a video URL — always use the search format.
 
 FORMAT:
   • Never use tables. Just text
