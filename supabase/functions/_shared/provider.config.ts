@@ -62,21 +62,10 @@ export const PROVIDER_KEY_ENVS: Record<ProviderName, string> = {
   bifrost:    "BIFROST_API_KEY",
 };
 
-// ── Backup provider ───────────────────────────────────────────────────────────
-// When primary fails, automatic fallback order:
-//   cloudflare → openrouter (direct)
-//   openrouter → cloudflare
-//   bifrost    → cloudflare
-
-export const BACKUP_PROVIDER: ProviderName =
-  PRIMARY_PROVIDER === "cloudflare" ? "openrouter" :
-  PRIMARY_PROVIDER === "bifrost"    ? "cloudflare" :
-  "cloudflare";
+// ── Exports used by models.config.ts ─────────────────────────────────────────
 
 export const PRIMARY_URL  = PROVIDER_URLS[PRIMARY_PROVIDER];
 export const PRIMARY_KEY  = PROVIDER_KEY_ENVS[PRIMARY_PROVIDER];
-export const BACKUP_URL   = PROVIDER_URLS[BACKUP_PROVIDER];
-export const BACKUP_KEY   = PROVIDER_KEY_ENVS[BACKUP_PROVIDER];
 
 // ── Cloudflare AI Gateway headers ─────────────────────────────────────────────
 // cf-aig-authorization: authenticates your gateway (prevents others using your gateway URL)
