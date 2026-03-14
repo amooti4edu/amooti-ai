@@ -475,12 +475,26 @@ Periods: ${top?.periods ?? "—"}`;
     subject: subj, class: cls, term: trm, topic: tpc,
     duration_mins: 40,
     objectives: ["By end of lesson students will be able to…"],
+    real_world_hook: "A vivid opening scenario or question connecting this topic to something learners genuinely encounter — local or global, whichever is most compelling. One sentence.",
     sections: [
       { name: "Introduction",  duration_mins: 5,  teacher_activity: "What the teacher does", student_activity: "What students do" },
       { name: "Main Activity", duration_mins: 25, teacher_activity: "What the teacher does", student_activity: "What students do" },
       { name: "Consolidation", duration_mins: 7,  teacher_activity: "What the teacher does", student_activity: "What students do" },
       { name: "Assessment",    duration_mins: 3,  teacher_activity: "What the teacher does", student_activity: "What students do" },
     ],
+    common_misconceptions: [
+      "Name the exact wrong belief students typically hold, then one sentence on how to surface and address it",
+      "A second specific misconception for this topic"
+    ],
+    discussion_questions: [
+      "An open Socratic question with no single right answer — sparks genuine debate",
+      "A question connecting this topic directly to students own lives or experiences",
+      "A what-if or challenge question for deeper thinkers"
+    ],
+    cross_curricular_links: [
+      { subject: "Subject name", link: "Specific, genuine connection — not a vague mention" }
+    ],
+    teacher_notes: "Collegial advice from one experienced teacher to another: where students typically stall, which analogy lands best, what to watch for during the main activity, and any pacing tip specific to this topic.",
     materials: ["Textbook", "Chart paper", "Specimens"],
     homework: "Description of homework task",
   }, null, 2);
@@ -490,38 +504,9 @@ Periods: ${top?.periods ?? "—"}`;
     title: "Topic Summary — " + tpc,
     subject: subj, class: cls, term: trm, topic: tpc,
     overview: "2–3 sentence plain-language description of what this topic covers.",
-    why_it_matters: "1–2 sentences on real-world relevance in Uganda/East Africa.",
+    why_it_matters: "1–2 sentences on real-world relevance — local or global context, whichever is most vivid.",
     key_concepts: [{ name: "Concept name", definition: "Plain-language definition" }],
     connections: [{ subject: "Mathematics", link: "How this topic connects to Maths" }],
-  }, null, 2);
-
-  const assessmentExample = JSON.stringify({
-    type: "assessment",
-    title: "Assessment — " + tpc,
-    subject: subj, class: cls, term: trm, topic: tpc,
-    instructions: "Answer all questions. Time allowed: 40 minutes.",
-    questions: [
-      { number: 1, type: "mcq", text: "Full question text?",
-        options: [{ id: "A", text: "Option A" }, { id: "B", text: "Option B" }, { id: "C", text: "Option C" }, { id: "D", text: "Option D" }],
-        correct_answer: "A", blooms_level: "knowledge", marks: 1 },
-      { number: 2, type: "short-answer", text: "Question text?",
-        correct_answer: "Expected answer", blooms_level: "comprehension", marks: 2 },
-      { number: 3, type: "essay", text: "Question text?",
-        marking_guide: "Key points the answer must cover", blooms_level: "analysis", marks: 5 },
-    ],
-  }, null, 2);
-
-  const reportExample = JSON.stringify({
-    type: "progress_report",
-    title: "Progress Report — " + tpc,
-    subject: subj, class: cls, term: trm, topic: tpc,
-    summary: "Overall 1–2 sentence class performance summary.",
-    outcomes: [{
-      outcome: "Outcome text",
-      mastery_pct: 72,
-      status: "on_track",
-      intervention: "Suggested activity if struggling",
-    }],
   }, null, 2);
 
   const sep = "─".repeat(72);
@@ -542,23 +527,20 @@ Periods: ${top?.periods ?? "—"}`;
     "",
     sep, "2. LESSON PLAN  (lesson plan, single lesson)", sep,
     "```json", lessonExample, "```",
-    "Rules: sections cover full duration_mins, objectives tied to official outcomes.",
+    "Rules:",
+    "  \u2022 sections cover full duration_mins, objectives tied to official outcomes",
+    "  \u2022 real_world_hook: pick the most compelling angle \u2014 not limited to Uganda",
+    "  \u2022 common_misconceptions: name the exact wrong belief, not just 'students struggle with this'",
+    "  \u2022 discussion_questions: open-ended only \u2014 no questions with a single factual answer",
+    "  \u2022 cross_curricular_links: only include subjects with a genuine, specific connection",
+    "  \u2022 teacher_notes: write as one experienced teacher briefing another \u2014 practical, honest, warm",
     "",
     sep, "3. TOPIC SUMMARY  (summary, overview)", sep,
     "```json", summaryExample, "```",
     "",
-    sep, "4. ASSESSMENT  (test, exam, assessment, quiz for teacher)", sep,
-    "```json", assessmentExample, "```",
-    "Rules: include correct_answer for all questions (teacher copy), mix Bloom\'s levels.",
-    "",
-    sep, "5. PROGRESS REPORT  (report, progress summary)", sep,
-    "```json", reportExample, "```",
-    "Rules: status is one of \"on_track\" | \"needs_support\" | \"critical\".",
-    "intervention required when status is not on_track.",
-    "",
     "ALWAYS:",
     "  \u2022 Ground outcomes in the curriculum specification above",
-    "  \u2022 Use Uganda-contextualised examples in all text fields",
+    "  \u2022 Use contextualised examples \u2014 local or global, whichever is most vivid",
     "  \u2022 If topic is not in curriculum, still produce the requested JSON",
     "    but add a top-level \"note\" field explaining the closest curriculum topic",
   ].join("\n");

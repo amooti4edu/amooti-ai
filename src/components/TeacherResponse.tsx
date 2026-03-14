@@ -105,6 +105,12 @@ function LessonPlan({ data }: { data: any }) {
         {data.class   && <p><Label>Class</Label>{data.class}</p>}
       </div>
 
+      {data.real_world_hook && (
+        <Section title="Real-World Hook">
+          <p className="text-muted-foreground italic border-l-2 border-primary pl-3">{data.real_world_hook}</p>
+        </Section>
+      )}
+
       {data.objectives?.length > 0 && (
         <Section title="Learning Objectives">
           <BulletList items={data.objectives} />
@@ -128,6 +134,41 @@ function LessonPlan({ data }: { data: any }) {
         </Section>
       )}
 
+      {data.common_misconceptions?.length > 0 && (
+        <Section title="Common Misconceptions">
+          <ul className="space-y-1.5">
+            {(data.common_misconceptions as string[]).map((m, i) => (
+              <li key={i} className="flex gap-2 text-muted-foreground">
+                <span className="text-amber-500 mt-0.5 shrink-0">⚠</span>
+                <span>{m}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {data.discussion_questions?.length > 0 && (
+        <Section title="Discussion Questions">
+          <ol className="space-y-1.5 list-decimal list-inside">
+            {(data.discussion_questions as string[]).map((q, i) => (
+              <li key={i} className="text-muted-foreground">{q}</li>
+            ))}
+          </ol>
+        </Section>
+      )}
+
+      {data.cross_curricular_links?.length > 0 && (
+        <Section title="Cross-Curricular Links">
+          <ul className="space-y-1">
+            {data.cross_curricular_links.map((c: any, i: number) => (
+              <li key={i} className="text-muted-foreground">
+                <span className="font-semibold text-foreground">{c.subject}: </span>{c.link}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {data.materials?.length > 0 && (
         <Section title="Materials">
           <BulletList items={Array.isArray(data.materials) ? data.materials : [data.materials]} />
@@ -139,11 +180,15 @@ function LessonPlan({ data }: { data: any }) {
           <p className="text-muted-foreground">{data.homework}</p>
         </Section>
       )}
+
+      {data.teacher_notes && (
+        <Section title="Teacher Notes">
+          <p className="text-muted-foreground bg-muted/40 rounded p-3 border border-border">{data.teacher_notes}</p>
+        </Section>
+      )}
     </div>
   );
 }
-
-// ── Topic Summary renderer ────────────────────────────────────────────────────
 
 function TopicSummary({ data }: { data: any }) {
   return (
@@ -191,96 +236,6 @@ function TopicSummary({ data }: { data: any }) {
   );
 }
 
-// ── Assessment renderer ───────────────────────────────────────────────────────
-
-function Assessment({ data }: { data: any }) {
-  const questions: any[] = data.questions ?? [];
-  return (
-    <div className="space-y-4 text-sm">
-      {data.note && (
-        <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-3">
-          <span className="font-semibold">Note: </span>{data.note}
-        </p>
-      )}
-      {data.instructions && (
-        <p className="font-semibold text-foreground border-b pb-2">{data.instructions}</p>
-      )}
-      <ol className="space-y-4">
-        {questions.map((q: any, i: number) => (
-          <li key={i} className="border border-border rounded p-3">
-            <p className="font-medium text-foreground">
-              {q.number}. {q.text}
-              {q.marks && <span className="ml-2 text-xs text-muted-foreground">[{q.marks} mark{q.marks > 1 ? "s" : ""}]</span>}
-            </p>
-            {q.type === "mcq" && q.options?.length > 0 && (
-              <ul className="mt-2 space-y-1 ml-4">
-                {q.options.map((opt: any) => (
-                  <li key={opt.id} className="text-muted-foreground">
-                    <span className="font-semibold">{opt.id}.</span> {opt.text}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {q.type === "essay" && q.marking_guide && (
-              <p className="mt-2 ml-4 text-xs text-muted-foreground italic">
-                Marking guide: {q.marking_guide}
-              </p>
-            )}
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
-// ── Progress Report renderer ──────────────────────────────────────────────────
-
-function ProgressReport({ data }: { data: any }) {
-  const outcomes: any[] = data.outcomes ?? [];
-  const statusColor = (s: string) =>
-    s === "on_track" ? "text-green-600" :
-    s === "needs_support" ? "text-amber-600" : "text-red-600";
-  const statusLabel = (s: string) =>
-    s === "on_track" ? "On Track" : s === "needs_support" ? "Needs Support" : "Critical";
-
-  return (
-    <div className="space-y-4 text-sm">
-      {data.note && (
-        <p className="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-3">
-          <span className="font-semibold">Note: </span>{data.note}
-        </p>
-      )}
-      {data.summary && (
-        <Section title="Summary">
-          <p className="text-muted-foreground">{data.summary}</p>
-        </Section>
-      )}
-      {outcomes.length > 0 && (
-        <Section title="Outcome Performance">
-          <div className="space-y-3">
-            {outcomes.map((o: any, i: number) => (
-              <div key={i} className="border border-border rounded p-3">
-                <p className="font-semibold text-foreground">{o.outcome}</p>
-                <div className="mt-1 flex flex-wrap gap-4 text-xs">
-                  <span><Label>Mastery</Label>{o.mastery_pct ?? "—"}%</span>
-                  <span className={statusColor(o.status ?? "")}>
-                    {statusLabel(o.status ?? "")}
-                  </span>
-                </div>
-                {o.intervention && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <Label>Intervention</Label>{o.intervention}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-    </div>
-  );
-}
-
 // ── Fallback: render any unknown object as readable key-value ─────────────────
 
 function GenericDoc({ data }: { data: any }) {
@@ -316,12 +271,10 @@ function DocRenderer({ data }: { data: any }) {
   }
 
   switch (data.type) {
-    case "scheme_of_work":   return <SchemeOfWork  data={data} />;
-    case "lesson_plan":      return <LessonPlan    data={data} />;
-    case "topic_summary":    return <TopicSummary  data={data} />;
-    case "assessment":       return <Assessment    data={data} />;
-    case "progress_report":  return <ProgressReport data={data} />;
-    default:                 return <GenericDoc    data={data} />;
+    case "scheme_of_work":   return <SchemeOfWork data={data} />;
+    case "lesson_plan":      return <LessonPlan   data={data} />;
+    case "topic_summary":    return <TopicSummary data={data} />;
+    default:                 return <GenericDoc   data={data} />;
   }
 }
 

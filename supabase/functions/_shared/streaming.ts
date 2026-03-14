@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { ModelEntry, TierConfig } from "./models.config.ts";
+import { isBifrostEntry, isCloudflareEntry, BIFROST_CACHE_HEADERS, cloudflareCacheHeaders } from "./provider.config.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -259,6 +260,13 @@ async function fetchFromProvider(
     headers["anthropic-version"] = "2023-06-01";
   } else {
     headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
+  // Inject cache headers based on which gateway this request is going through
+  if (isCloudflareEntry(entry.providerUrl)) {
+    Object.assign(headers, cloudflareCacheHeaders());
+  } else if (isBifrostEntry(entry.providerUrl)) {
+    Object.assign(headers, BIFROST_CACHE_HEADERS);
   }
 
   try {

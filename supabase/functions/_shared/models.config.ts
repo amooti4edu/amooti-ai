@@ -35,14 +35,21 @@ export interface TierConfig {
   models: ModelEntry[];
 }
 
-// ── Shared provider URLs ──────────────────────────────────────────────────────
+import {
+  PRIMARY_PROVIDER,
+  BACKUP_PROVIDER,
+  PRIMARY_URL,
+  PRIMARY_KEY,
+  BACKUP_URL,
+  BACKUP_KEY,
+} from "./provider.config.ts";
 
-const CEREBRAS_URL    = "https://api.cerebras.ai/v1/chat/completions";
-const OLLAMA_URL      = "https://ollama.com/api/chat";   // Ollama Cloud (NDJSON, not SSE)
-const OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions";
-const GOOGLE_URL      = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const ANTHROPIC_URL   = "https://api.anthropic.com/v1/messages";
-const CLOUDFLARE_URL  = "https://api.cloudflare.com/client/v4/accounts/";  // Base URL, account ID will be appended
+// ── Direct provider URLs (used for specific fallbacks only) ───────────────────
+
+const CEREBRAS_URL   = "https://api.cerebras.ai/v1/chat/completions";
+const OLLAMA_URL     = "https://ollama.com/api/chat";
+const GOOGLE_URL     = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const CLOUDFLARE_URL = "https://api.cloudflare.com/client/v4/accounts/";
 
 // ── Tier definitions ──────────────────────────────────────────────────────────
 
@@ -100,31 +107,31 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     allowedModes: ["query", "quiz"],
     models: [
       {
-        label:         "GPT-5 Nano",
-        providerUrl:   OPENROUTER_URL,
+        label:         `GPT-5 Nano (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "openai/gpt-5-nano",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: true,
       },
       {
-        label:         "GPT-4o Mini (OpenRouter)",
-        providerUrl:   OPENROUTER_URL,
+        label:         `GPT-4o Mini (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "openai/gpt-4o-mini",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: true,
       },
       {
-        label:         "DeepSeek V3 (OpenRouter)",
-        providerUrl:   OPENROUTER_URL,
+        label:         `DeepSeek V3 (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "deepseek/deepseek-v3.2",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: false,
       },
       {
-        label:         "Meta Llama (OpenRouter)",
-        providerUrl:   OPENROUTER_URL,
+        label:         `Meta Llama (${BACKUP_PROVIDER} backup)`,
+        providerUrl:   BACKUP_URL,
         model:         "meta-llama/llama-3.3-70b-instruct",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     BACKUP_KEY,
         supportsTools: false,
       },
       {
@@ -144,42 +151,42 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     allowedModes: ["query", "quiz", "teacher"],
     models: [
       {
-        label:         "Grok 4 Fast",
-        providerUrl:   OPENROUTER_URL,
+        label:         `Grok 4 Fast (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "x-ai/grok-4-fast",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: true,
       },
       {
-        label:         "Gemini 2.5 Flash",
-        providerUrl:   OPENROUTER_URL,
+        label:         `Gemini 2.5 Flash (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "google/gemini-2.5-flash",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: true,
       },
       {
-        label:         "Gemini 2.5 Flash (Google fallback)",
+        label:         "Gemini 2.5 Flash (Google direct fallback)",
         providerUrl:   GOOGLE_URL,
         model:         "google/gemini-2.5-flash",
         apiKeyEnv:     "GOOGLE_API_KEY",
         supportsTools: true,
       },
       {
-        label:         "Gemini 3 Flash",
-        providerUrl:   OPENROUTER_URL,
+        label:         `Gemini 3 Flash (${BACKUP_PROVIDER} backup)`,
+        providerUrl:   BACKUP_URL,
         model:         "google/gemini-3-flash-preview",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     BACKUP_KEY,
         supportsTools: true,
       },
       {
-        label:         "DeepSeek V3 (OpenRouter fallback)",
-        providerUrl:   OPENROUTER_URL,
+        label:         `DeepSeek V3 (${BACKUP_PROVIDER} backup)`,
+        providerUrl:   BACKUP_URL,
         model:         "deepseek/deepseek-v3.2",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     BACKUP_KEY,
         supportsTools: false,
       },
       {
-        label:                   "Ollama Cloud GPT-OSS 120B (fallback)",
+        label:                   "Ollama Cloud GPT-OSS 120B (last resort)",
         providerUrl:             OLLAMA_URL,
         model:                   "gpt-oss:120b-cloud",
         apiKeyEnv:               "OLLAMA_API_KEY",
@@ -194,31 +201,31 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     allowedModes: ["query", "quiz", "teacher"],
     models: [
       {
-        label:         "GPT 5 Nano",
-        providerUrl:   OPENROUTER_URL,
+        label:         `GPT-5 Nano (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "openai/gpt-5-nano",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: true,
       },
       {
-        label:         "Gemini 2.5 Flashlite",
-        providerUrl:   OPENROUTER_URL,
+        label:         `Gemini 2.5 Flash Lite (${PRIMARY_PROVIDER})`,
+        providerUrl:   PRIMARY_URL,
         model:         "google/gemini-2.5-flash-lite",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     PRIMARY_KEY,
         supportsTools: true,
       },
       {
-        label:         "GPT 4o mini (OpenRouter)",
-        providerUrl:   OPENROUTER_URL,
+        label:         `GPT-4o Mini (${BACKUP_PROVIDER} backup)`,
+        providerUrl:   BACKUP_URL,
         model:         "openai/gpt-4o-mini",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     BACKUP_KEY,
         supportsTools: true,
       },
       {
-        label:         "Grok 4.1 fast",
-        providerUrl:   OPENROUTER_URL,
+        label:         `Grok 4.1 Fast (${BACKUP_PROVIDER} backup)`,
+        providerUrl:   BACKUP_URL,
         model:         "x-ai/grok-4.1-fast",
-        apiKeyEnv:     "OPENROUTER_API_KEY",
+        apiKeyEnv:     BACKUP_KEY,
         supportsTools: true,
       },
     ],
@@ -240,7 +247,7 @@ export interface EmbeddingProvider {
 export const EMBEDDING_PROVIDERS: EmbeddingProvider[] = [
   {
     label:        "BGE-M3 (Cloudflare Workers AI)",
-    url:          CLOUDFLARE_URL,  // Base URL, account ID will be appended in the embedding function
+    url:          CLOUDFLARE_URL,
     model:        "@cf/baai/bge-m3",
     apiKeyEnv:    "CLOUDFLARE_API_KEY",
     accountIdEnv: "CLOUDFLARE_ACCOUNT_ID",
@@ -251,6 +258,14 @@ export const EMBEDDING_PROVIDERS: EmbeddingProvider[] = [
     url:        "https://openrouter.ai/api/v1/embeddings",
     model:      "baai/bge-m3",
     apiKeyEnv:  "OPENROUTER_API_KEY",
+    dimensions: 1024,
+  },
+  {
+    // Bifrost gateway — only active when BIFROST_API_KEY + BIFROST_URL are set
+    label:      "BGE-M3 (Bifrost fallback)",
+    url:        (Deno.env.get("BIFROST_URL") ?? "http://localhost:8080") + "/api/v1/embeddings",
+    model:      "baai/bge-m3",
+    apiKeyEnv:  "BIFROST_API_KEY",
     dimensions: 1024,
   },
 ];
