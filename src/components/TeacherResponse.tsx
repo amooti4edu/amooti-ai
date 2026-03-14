@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Download, Copy, Check, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import type { TeacherDoc } from "@/types/chat";
 
 interface TeacherResponseProps {
@@ -281,7 +281,6 @@ function DocRenderer({ data }: { data: any }) {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function TeacherResponse({ doc }: TeacherResponseProps) {
-  const [copied, setCopied]   = useState(false);
   const [expired, setExpired] = useState(false);
 
   useEffect(() => {
@@ -290,18 +289,8 @@ export function TeacherResponse({ doc }: TeacherResponseProps) {
     const interval = setInterval(checkExpiry, 30_000);
     return () => clearInterval(interval);
   }, [doc.expiresAt]);
-
-  const handleCopy = async () => {
-    // Produce a clean text representation for copy
-    const textContent = typeof doc.content === "string"
-      ? doc.content
-      : JSON.stringify(doc.content, null, 2);
-    await navigator.clipboard.writeText(textContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Derive a display title from the document object
+  
+// Derive a display title from the document object
   const docTitle = typeof doc.content === "object" && doc.content !== null
     ? (doc.content as any).title ?? "Teacher Document"
     : "Teacher Document";
@@ -331,14 +320,6 @@ export function TeacherResponse({ doc }: TeacherResponseProps) {
             Download Word Doc
           </button>
         )}
-
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? "Copied!" : "Copy JSON"}
-        </button>
 
         {!expired && (
           <span className="text-xs text-muted-foreground">
