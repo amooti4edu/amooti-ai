@@ -37,19 +37,18 @@ export interface TierConfig {
 
 import {
   PRIMARY_PROVIDER,
-  BACKUP_PROVIDER,
   PRIMARY_URL,
   PRIMARY_KEY,
-  BACKUP_URL,
-  BACKUP_KEY,
 } from "./provider.config.ts";
 
 // ── Direct provider URLs (used for specific fallbacks only) ───────────────────
 
-const CEREBRAS_URL   = "https://api.cerebras.ai/v1/chat/completions";
-const OLLAMA_URL     = "https://ollama.com/api/chat";
-const GOOGLE_URL     = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const CLOUDFLARE_URL = "https://api.cloudflare.com/client/v4/accounts/";
+const CEREBRAS_URL    = "https://api.cerebras.ai/v1/chat/completions";
+const OLLAMA_URL      = "https://ollama.com/api/chat";
+const OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions";
+const OPENAI_URL      = "https://api.openai.com/v1/chat/completions";
+const GOOGLE_URL      = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const CLOUDFLARE_URL  = "https://api.cloudflare.com/client/v4/accounts/";
 
 // ── Tier definitions ──────────────────────────────────────────────────────────
 
@@ -65,7 +64,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
         providerUrl:   CEREBRAS_URL,
         model:         "gpt-oss-120b",
         apiKeyEnv:     "CEREBRAS_API_KEY",
-        supportsTools: true,   // fast enough to attempt; fallback handled if it fails
+        supportsTools: false,   // fast enough to attempt; fallback handled if it fails
       },
       {
         // Ollama Cloud — NDJSON stream, needs transform flag
@@ -102,132 +101,77 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
   },
 
   // ── BASIC — 10 questions/day (7,000 UGX/month) ─────────────────────────────
+  // 4 models, cheapest to best. Each model: Cloudflare→OpenRouter, OpenRouter direct, provider direct.
   basic: {
     dailyLimit:   10,
     allowedModes: ["query", "quiz"],
     models: [
-      {
-        label:         `GPT-5 Nano (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "openai/gpt-5-nano",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `GPT-4o Mini (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "openai/gpt-4o-mini",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `DeepSeek V3 (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "deepseek/deepseek-v3.2",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: false,
-      },
-      {
-        label:         `Meta Llama (${BACKUP_PROVIDER} backup)`,
-        providerUrl:   BACKUP_URL,
-        model:         "meta-llama/llama-3.3-70b-instruct",
-        apiKeyEnv:     BACKUP_KEY,
-        supportsTools: false,
-      },
-      {
-        label:                   "Ollama Cloud GPT-OSS 120B (fallback)",
-        providerUrl:             OLLAMA_URL,
-        model:                   "gpt-oss:120b-cloud",
-        apiKeyEnv:               "OLLAMA_API_KEY",
-        supportsTools:           false,
-        requiresNDJSONTransform: true,
-      },
+      // ── Model 1: GPT-5 Nano ──────────────────────────────────────────────────
+      { label: "GPT-5 Nano (Cloudflare→OpenRouter)",  providerUrl: PRIMARY_URL,  model: "openai/gpt-5-nano",                   apiKeyEnv: PRIMARY_KEY,        supportsTools: true  },
+      { label: "GPT-5 Nano (OpenRouter direct)",       providerUrl: OPENROUTER_URL, model: "openai/gpt-5-nano",                 apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true  },
+      { label: "GPT-5 Nano (OpenAI direct)",           providerUrl: OPENAI_URL,   model: "gpt-4o-mini",                         apiKeyEnv: "OPENAI_API_KEY",   supportsTools: true  },
+      // ── Model 2: GPT-4o Mini ────────────────────────────────────────────────
+      { label: "GPT-4o Mini (Cloudflare→OpenRouter)", providerUrl: PRIMARY_URL,  model: "openai/gpt-4o-mini",                  apiKeyEnv: PRIMARY_KEY,        supportsTools: true  },
+      { label: "GPT-4o Mini (OpenRouter direct)",      providerUrl: OPENROUTER_URL, model: "openai/gpt-4o-mini",               apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true  },
+      { label: "GPT-4o Mini (OpenAI direct)",          providerUrl: OPENAI_URL,   model: "gpt-4o-mini",                         apiKeyEnv: "OPENAI_API_KEY",   supportsTools: true  },
+      // ── Model 3: DeepSeek V3 ────────────────────────────────────────────────
+      { label: "DeepSeek V3 (Cloudflare→OpenRouter)", providerUrl: PRIMARY_URL,  model: "deepseek/deepseek-v3.2",              apiKeyEnv: PRIMARY_KEY,        supportsTools: false },
+      { label: "DeepSeek V3 (OpenRouter direct)",      providerUrl: OPENROUTER_URL, model: "deepseek/deepseek-v3.2",           apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: false },
+    //{ label: "DeepSeek V3 (Direct)",                  providerUrl: ,   model: "deepseek/deepseek-v3.2",            apiKeyEnv: "",   supportsTools: true  },
+      // ── Model 4: Meta Llama ─────────────────────────────────────────────────
+      { label: "Meta Llama (Cloudflare→OpenRouter)",  providerUrl: PRIMARY_URL,  model: "meta-llama/llama-3.3-70b-instruct",  apiKeyEnv: PRIMARY_KEY,        supportsTools: false },
+      { label: "Meta Llama (OpenRouter direct)",       providerUrl: OPENROUTER_URL, model: "meta-llama/llama-3.3-70b-instruct", apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: false },
+    //{ label: "Meta Llama (Direct)",                 providerUrl: ,   model: "meta-llama/llama-3.3-70b-instruct",     apiKeyEnv: "",   supportsTools: true  },
     ],
   },
 
   // ── PREMIUM — 20 questions/day (15,000 UGX/month) — teachers included ───────
+  // 4 models, cheapest to best. Each model: Cloudflare→OpenRouter, OpenRouter direct, provider direct.
   premium: {
     dailyLimit:   20,
     allowedModes: ["query", "quiz", "teacher"],
     models: [
-      {
-        label:         `Grok 4 Fast (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "x-ai/grok-4-fast",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `Gemini 2.5 Flash (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "google/gemini-2.5-flash",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         "Gemini 2.5 Flash (Google direct fallback)",
-        providerUrl:   GOOGLE_URL,
-        model:         "google/gemini-2.5-flash",
-        apiKeyEnv:     "GOOGLE_API_KEY",
-        supportsTools: true,
-      },
-      {
-        label:         `Gemini 3 Flash (${BACKUP_PROVIDER} backup)`,
-        providerUrl:   BACKUP_URL,
-        model:         "google/gemini-3-flash-preview",
-        apiKeyEnv:     BACKUP_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `DeepSeek V3 (${BACKUP_PROVIDER} backup)`,
-        providerUrl:   BACKUP_URL,
-        model:         "deepseek/deepseek-v3.2",
-        apiKeyEnv:     BACKUP_KEY,
-        supportsTools: false,
-      },
-      {
-        label:                   "Ollama Cloud GPT-OSS 120B (last resort)",
-        providerUrl:             OLLAMA_URL,
-        model:                   "gpt-oss:120b-cloud",
-        apiKeyEnv:               "OLLAMA_API_KEY",
-        supportsTools:           true,
-        requiresNDJSONTransform: true,
-      },
+      // ── Model 1: Grok 4 Fast ────────────────────────────────────────────────
+      { label: "Grok 4 Fast (Cloudflare→OpenRouter)",     providerUrl: PRIMARY_URL,    model: "x-ai/grok-4-fast",              apiKeyEnv: PRIMARY_KEY,          supportsTools: true  },
+      { label: "Grok 4 Fast (OpenRouter direct)",          providerUrl: OPENROUTER_URL, model: "x-ai/grok-4-fast",              apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true  },
+    //{ label: "Grok 4 Fast (Direct fallback)",            providerUrl: ,     model: "x-ai/grok-4-fast",              apiKeyEnv: "",     supportsTools: true  },
+      // ── Model 2: Gemini 3.1 Flashlite ─────────────────────────────────────────────
+      { label: "Gemini 3.1 Flashlite (Cloudflare→OpenRouter)",  providerUrl: PRIMARY_URL,    model: "google/gemini-3.1-flash-lite-preview",               apiKeyEnv: PRIMARY_KEY,          supportsTools: true  },
+      { label: "Gemini 3.1 Flashlite (OpenRouter direct)",       providerUrl: OPENROUTER_URL, model: "google/gemini-3.1-flash-lite-preview",               apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true  },
+      { label: "Gemini 3.1 Flashlite (Google direct)",           providerUrl: GOOGLE_URL,     model: "google/gemini-3.1-flash-lite-preview",              apiKeyEnv: "GOOGLE_API_KEY",     supportsTools: true  },
+      // ── Model 3: Gemini 2.5 Flash ───────────────────────────────────────────
+      { label: "Gemini 2.5 Flash (Cloudflare→OpenRouter)", providerUrl: PRIMARY_URL,    model: "google/gemini-2.5-flash",       apiKeyEnv: PRIMARY_KEY,          supportsTools: true  },
+      { label: "Gemini 2.5 Flash (OpenRouter direct)",     providerUrl: OPENROUTER_URL, model: "google/gemini-2.5-flash",       apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true  },
+      { label: "Gemini 2.5 Flash (Google direct)",         providerUrl: GOOGLE_URL,     model: "gemini-2.5-flash",              apiKeyEnv: "GOOGLE_API_KEY",     supportsTools: true  },
+ // ── Model 4: DeepSeek V3 ────────────────────────────────────────────────
+      { label: "DeepSeek V3 (Cloudflare→OpenRouter)",     providerUrl: PRIMARY_URL,    model: "deepseek/deepseek-v3.2",        apiKeyEnv: PRIMARY_KEY,          supportsTools: false },
+      { label: "DeepSeek V3 (OpenRouter direct)",          providerUrl: OPENROUTER_URL, model: "deepseek/deepseek-v3.2",        apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: false },
+      { label: "DeepSeek V3 (Gemini fallback)",            providerUrl: GOOGLE_URL,     model: "gemini-2.5-flash",              apiKeyEnv: "GOOGLE_API_KEY",     supportsTools: true  },
     ],
   },
-// ── ENTERPRISE — 100 questions/day (custom negotiated pricing) ───────────────
+
+  // ── ENTERPRISE — 100 questions/day (custom negotiated pricing) ───────────────
+  // 4 models, cheapest to best. Each model: Cloudflare→OpenRouter, OpenRouter direct, provider direct.
   enterprise: {
     dailyLimit:   100,
     allowedModes: ["query", "quiz", "teacher"],
     models: [
-      {
-        label:         `GPT-5 Nano (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "openai/gpt-5-nano",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `Gemini 2.5 Flash Lite (${PRIMARY_PROVIDER})`,
-        providerUrl:   PRIMARY_URL,
-        model:         "google/gemini-2.5-flash-lite",
-        apiKeyEnv:     PRIMARY_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `GPT-4o Mini (${BACKUP_PROVIDER} backup)`,
-        providerUrl:   BACKUP_URL,
-        model:         "openai/gpt-4o-mini",
-        apiKeyEnv:     BACKUP_KEY,
-        supportsTools: true,
-      },
-      {
-        label:         `Grok 4.1 Fast (${BACKUP_PROVIDER} backup)`,
-        providerUrl:   BACKUP_URL,
-        model:         "x-ai/grok-4.1-fast",
-        apiKeyEnv:     BACKUP_KEY,
-        supportsTools: true,
-      },
+      // ── Model 1: GPT-5 Nano ──────────────────────────────────────────────────
+      { label: "GPT-5 Nano (Cloudflare→OpenRouter)",      providerUrl: PRIMARY_URL,    model: "openai/gpt-5-nano",                    apiKeyEnv: PRIMARY_KEY,          supportsTools: true },
+      { label: "GPT-5 Nano (OpenRouter direct)",           providerUrl: OPENROUTER_URL, model: "openai/gpt-5-nano",                    apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true },
+      { label: "GPT-5 Nano (OpenAI direct)",               providerUrl: OPENAI_URL,     model: "openai/gpt-5-nano",                   apiKeyEnv: "OPENAI_API_KEY",     supportsTools: true },
+      // ── Model 2: Gemini 2.5 Flash Lite ──────────────────────────────────────
+      { label: "Gemini Flash Lite (Cloudflare→OpenRouter)", providerUrl: PRIMARY_URL,    model: "google/gemini-2.5-flash-lite",        apiKeyEnv: PRIMARY_KEY,          supportsTools: true },
+      { label: "Gemini Flash Lite (OpenRouter direct)",     providerUrl: OPENROUTER_URL, model: "google/gemini-2.5-flash-lite",        apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true },
+      { label: "Gemini Flash Lite (Google direct)",         providerUrl: GOOGLE_URL,     model: "gemini-2.5-flash-lite",               apiKeyEnv: "GOOGLE_API_KEY",     supportsTools: true },
+      // ── Model 3: GPT-4o Mini ────────────────────────────────────────────────
+      { label: "GPT-4o Mini (Cloudflare→OpenRouter)",     providerUrl: PRIMARY_URL,    model: "openai/gpt-4o-mini",                   apiKeyEnv: PRIMARY_KEY,          supportsTools: true },
+      { label: "GPT-4o Mini (OpenRouter direct)",          providerUrl: OPENROUTER_URL, model: "openai/gpt-4o-mini",                   apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true },
+      { label: "GPT-4o Mini (OpenAI direct)",              providerUrl: OPENAI_URL,     model: "gpt-4o-mini",                          apiKeyEnv: "OPENAI_API_KEY",     supportsTools: true },
+      // ── Model 4: Grok 4.1 Fast ──────────────────────────────────────────────
+      { label: "Grok 4.1 Fast (Cloudflare→OpenRouter)",   providerUrl: PRIMARY_URL,    model: "x-ai/grok-4.1-fast",                  apiKeyEnv: PRIMARY_KEY,          supportsTools: true },
+      { label: "Grok 4.1 Fast (OpenRouter direct)",        providerUrl: OPENROUTER_URL, model: "x-ai/grok-4.1-fast",                  apiKeyEnv: "OPENROUTER_API_KEY", supportsTools: true },
+   // { label: "Grok 4.1 Fast (Gemini fallback)",          providerUrl: GOOGLE_URL,     model: "gemini-2.5-flash",                    apiKeyEnv: "GOOGLE_API_KEY",     supportsTools: true },
     ],
   },
 };
