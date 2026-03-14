@@ -40,8 +40,9 @@ const CF_ACCOUNT_ID = Deno.env.get("CF_ACCOUNT_ID") ?? "";
 const CF_GATEWAY_ID = Deno.env.get("CF_GATEWAY_ID") ?? "amooti";
 const CF_BASE       = `https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${CF_GATEWAY_ID}`;
 
-// The OpenRouter path through Cloudflare — same models, same API key, just proxied
-export const CF_OPENROUTER_URL = `${CF_BASE}/openrouter/v1/chat/completions`;
+// The compat endpoint — Cloudflare's unified OpenAI-compatible path.
+// Handles all providers/models through one URL (what Cloudflare quickstart gives you).
+export const CF_COMPAT_URL     = `${CF_BASE}/compat/chat/completions`;
 
 // Direct provider paths through Cloudflare (used as fallbacks inside the gateway)
 export const CF_GOOGLE_URL     = `${CF_BASE}/google-ai-studio/v1/chat/completions`;
@@ -50,7 +51,7 @@ export const CF_ANTHROPIC_URL  = `${CF_BASE}/anthropic/v1/messages`;
 // ── Provider base URLs ────────────────────────────────────────────────────────
 
 export const PROVIDER_URLS: Record<ProviderName, string> = {
-  cloudflare: CF_OPENROUTER_URL,
+  cloudflare: CF_COMPAT_URL,
   openrouter: "https://openrouter.ai/api/v1/chat/completions",
   bifrost:    (Deno.env.get("BIFROST_URL") ?? "http://localhost:8080") + "/api/v1/chat/completions",
 };
