@@ -263,7 +263,7 @@ const About = () => {
                 <hr className="rule-thin mb-6" />
 
                 <p className="body-text mb-5">
-                  Amooti has been trained on the new NCDC secondary school curriculum to:
+                  Amooti has been trained on the new NCDC secondary school curriculum; and as such its vision and mission is to:
                 </p>
 
                 <div className="pull-quote">
@@ -275,7 +275,7 @@ const About = () => {
                   To see the number of subjects we have covered so far, tap on the <strong>Subjects</strong> button.
                 </p>
 
-                <p className="body-text mb-5">As such, the app has adopted the vision:</p>
+                <p className="body-text mb-5">Amooti will aim to achieve exactly what the curriculum was made for; that is:</p>
 
                 <div className="pull-quote">
                   "The new curriculum focuses on four 'Key Learning Outcomes':
@@ -301,7 +301,7 @@ const About = () => {
                 </p>
 
                 <p className="body-text mb-5">
-                  The underlying structure of all the tiers is the same; the major difference is in the AI models we use, which become progressively more powerful and therefore more "intelligent," and the usage rate is also increased. The Enterprise Tier is aimed at school level, where instead of individual student accounts, we provide one account for the whole school. This too has its benefits.
+                  The underlying structure of all the tiers is the same; the major difference is in the AI models we use, which become progressively newer, more powerful and therefore more "intelligent," and the usage rate is also increased. The Enterprise Tier is aimed at school level, where instead of individual student accounts, we provide one account for the whole school. This too has its benefits.
                 </p>
 
                 <p className="body-text">
@@ -331,15 +331,18 @@ const About = () => {
                       You can tell Amooti to quiz you — e.g., "Quiz me about phototropism." And you will be asked questions and after you have answered, you will be marked and corrected.
                     </p>
                   </div>
-                </div>
+                  <div className="mode-card">
+                    <span className="mode-label">Mode 3 — Teacher</span>
+                    <p className="body-text" style={{ margin: 0, fontSize: '0.98rem' }}>
+                      Teacher mode (premium only) — was made to help out our teacher as far as it can; teachers can request lesson plans, schemes of work for a particular topic, or topic summaries and receive a downloadable file built from the official curriculum. 
+                    </p>
+                  </div>                  
+                </div>               
 
                 <p className="body-text mb-5">
-                  So make sure to select the appropriate mode you want to properly use it.
+                  To enhance usage, please make sure to select the appropriate mode and subject you want assistance in.
                 </p>
 
-                <p className="body-text">
-                  Teachers can also use it to get ideas on how to teach a certain concept, and it is capable of generating a scheme for a particular topic as a downloadable document. However Teacher Mode is only accessible under the Premium Tier of membership.
-                </p>
               </section>
 
               {/* Section 05 — Closing */}
@@ -348,7 +351,7 @@ const About = () => {
                 <hr className="rule-thin mb-6" />
 
                 <p className="body-text mb-8">
-                  You are most welcome to the future. I hope Amooti will bring you as much joy as it did me as I was building it — for God and my Country. Feel free to contact us any time with feedback and any other questions or communications.
+                  You are most welcome to the future. I hope Amooti will bring you as much joy as it did me in building it — for God and my Country. Feel free to contact us any time with feedback and any other questions or communications. One important thing to remember is that despite our best efforts Amooti may sometimes not give accurate information; so please double check responses whenever in doubt.
                 </p>
 
                 <hr className="rule-thin mb-6" />
