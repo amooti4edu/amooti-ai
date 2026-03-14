@@ -33,7 +33,7 @@ const CORS = {
 // Each teacher document (scheme, lesson plan, assessment) counts as this many
 // questions toward the user's daily quota. Generating a full document is
 // significantly more expensive than a single chat query.
-const DOCUMENT_QUOTA_COST = 5;
+const DOCUMENT_QUOTA_COST = 3;
 
 // ── Rate limiter (teacher requests) ──────────────────────────────────────────
 // Mirrors the logic in chat/index.ts. Teacher documents cost DOCUMENT_QUOTA_COST
