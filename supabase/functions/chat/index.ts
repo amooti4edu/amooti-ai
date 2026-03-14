@@ -93,7 +93,7 @@ async function checkUserRateLimit(
       if (dailyCount >= dailyLimit) {
         return {
           allowed: false,
-          reason: `Daily limit of ${dailyLimit} questions reached for your plan. Upgrade for more.`,
+          reason: `Daily limit of ${dailyLimit} questions reached for your plan. Please upgrade for more.`,
         };
       }
 
